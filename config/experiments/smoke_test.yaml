@@ -1,0 +1,24 @@
+experiment_id: smoke_test
+description: "Smoke test: DP en dataset small sin LLM — verifica que el pipeline completo funciona"
+
+dataset:
+  path: data/small/
+  split: all
+
+algorithms:
+  - name: dynamic_programming
+    params:
+      max_segments: 5
+
+llm_evaluator:
+  provider: none
+  temperature: 0.0
+  max_tokens: 512
+
+evaluation:
+  metrics: [windowdiff, pk, f1_boundary, runtime_seconds]
+  random_seed: 42
+
+output:
+  path: results/smoke_test/
+  save_raw: true

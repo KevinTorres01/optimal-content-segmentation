@@ -1,0 +1,12 @@
+dataset_name: small
+n_documents: 20
+segments_per_doc:
+  min: 3
+  max: 5
+sentences_per_segment:
+  min: 4
+  max: 8
+topic_source: synthetic_templates
+overlap_level: low
+random_seed: 42
+language: es
