@@ -1,0 +1,31 @@
+experiment_id: exp_compare_algorithms
+description: "Comparison of all four segmentation algorithms on the small dataset"
+
+dataset:
+  path: data/small/
+
+algorithms:
+  - name: dynamic_programming
+    params:
+      max_segments: 5
+  - name: greedy
+    params:
+      max_segments: 5
+      window_size: 2
+  - name: simulated_annealing
+    params:
+      max_segments: 5
+      n_iterations: 2000
+      cooling_rate: 0.995
+      random_seed: 42
+
+llm_evaluator:
+  provider: none
+
+evaluation:
+  metrics: [windowdiff, pk, f1_boundary, runtime_seconds]
+  random_seed: 42
+
+output:
+  path: results/exp_compare_algorithms/
+  save_raw: true

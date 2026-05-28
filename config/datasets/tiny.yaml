@@ -1,8 +1,0 @@
-dataset_name: tiny
-n_documents: 3
-segments_per_doc: { min: 2, max: 3 }
-sentences_per_segment: { min: 3, max: 5 }
-topic_source: synthetic_templates
-overlap_level: low
-random_seed: 42
-language: es
