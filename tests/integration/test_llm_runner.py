@@ -30,7 +30,7 @@ def llm_env(tmp_path, monkeypatch):
     config = {
         "experiment_id": "exp_llm",
         "description": "LLM integration test",
-        "dataset": {"path": str(dataset_dir), "split": "all"},
+        "dataset": {"path": str(dataset_dir)},
         "algorithms": [{"name": "dynamic_programming", "params": {"max_segments": 2}}],
         "llm_evaluator": {"provider": "mistral", "model": "mistral-large-latest"},
         "evaluation": {"metrics": ["pk", "llm_score"], "random_seed": 7},

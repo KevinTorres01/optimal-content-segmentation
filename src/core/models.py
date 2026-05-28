@@ -141,7 +141,6 @@ class DatasetRef(BaseModel):
     """Dataset reference inside an experiment config."""
 
     path: str
-    split: str = "all"
 
 
 class OutputConfig(BaseModel):

@@ -7,16 +7,14 @@ from rich.console import Console
 
 from src.core.interfaces import BaseLLMEvaluator
 from src.core.models import Segment
-from src.llm.deepseek_provider import DeepSeekEvaluator
+from src.llm.groq_provider import GroqEvaluator
 from src.llm.mistral_provider import MistralEvaluator
-from src.llm.ollama_provider import OllamaEvaluator
 
 console = Console()
 
 _PROVIDERS: dict[str, Callable[..., BaseLLMEvaluator]] = {
+    "groq": GroqEvaluator,
     "mistral": MistralEvaluator,
-    "deepseek": DeepSeekEvaluator,
-    "ollama": OllamaEvaluator,
 }
 
 # A short, obviously-cohesive segment so a healthy model returns a high score.

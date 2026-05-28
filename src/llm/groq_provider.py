@@ -10,16 +10,17 @@ from src.core.models import CohesionScore, Segment
 from src.llm.prompts import COHESION_SCORING_PROMPT, parse_cohesion_response
 from src.llm.rate_limit import call_with_retry, throttle_from_env
 
-_DEFAULT_MODEL = "deepseek-chat"
-_BASE_URL = "https://api.deepseek.com"
+_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+_BASE_URL = "https://api.groq.com/openai/v1"
 
 
-class DeepSeekEvaluator(BaseLLMEvaluator):
-    """LLM evaluator using DeepSeek models (Chinese provider, accessible from Cuba).
+class GroqEvaluator(BaseLLMEvaluator):
+    """LLM evaluator using Groq's fast inference platform (free tier available).
 
-    DeepSeek exposes an OpenAI-compatible API.
-    Obtain API key at: https://platform.deepseek.com/
-    Set env var: DEEPSEEK_API_KEY
+    Groq runs open models (Llama, Mixtral, Gemma) on custom hardware and exposes
+    an OpenAI-compatible API. The free tier needs no purchased credits.
+    Obtain API key at: https://console.groq.com/
+    Set env var: GROQ_API_KEY
     """
 
     def __init__(
@@ -28,18 +29,18 @@ class DeepSeekEvaluator(BaseLLMEvaluator):
         temperature: float = 0.0,
         max_tokens: int = 512,
     ) -> None:
-        """Initialize the DeepSeek evaluator.
+        """Initialize the Groq evaluator.
 
         Args:
-            model: DeepSeek model ID (default: deepseek-chat → DeepSeek-V3).
+            model: Groq model ID (default: llama-3.3-70b-versatile).
             temperature: Sampling temperature (0.0 = deterministic).
             max_tokens: Maximum tokens in the response.
         """
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError(
-                "DEEPSEEK_API_KEY environment variable is not set. "
-                "Obtain your key at https://platform.deepseek.com/"
+                "GROQ_API_KEY environment variable is not set. "
+                "Obtain your key at https://console.groq.com/"
             )
         self._model = model
         self._temperature = temperature
@@ -49,7 +50,7 @@ class DeepSeekEvaluator(BaseLLMEvaluator):
 
     @property
     def provider_name(self) -> str:
-        return "deepseek"
+        return "groq"
 
     @property
     def model_name(self) -> str:

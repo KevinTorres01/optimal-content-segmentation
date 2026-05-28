@@ -62,7 +62,7 @@ class BaseLLMEvaluator(ABC):
     @property
     @abstractmethod
     def provider_name(self) -> str:
-        """Identifier string used in config files (e.g. 'mistral', 'deepseek')."""
+        """Identifier string used in config files (e.g. 'groq', 'mistral')."""
         ...
 
     @property
@@ -70,8 +70,3 @@ class BaseLLMEvaluator(ABC):
     def model_name(self) -> str:
         """Specific model identifier (e.g. 'mistral-large-latest')."""
         ...
-
-    @property
-    def is_local(self) -> bool:
-        """True if this provider runs locally (Ollama). False for online APIs."""
-        return False

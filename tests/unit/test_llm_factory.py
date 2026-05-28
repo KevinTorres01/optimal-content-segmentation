@@ -7,7 +7,7 @@ from src.llm import check as check_module
 from src.llm.check import check_provider
 from src.llm.factory import get_llm_provider
 from src.llm.fallback_provider import FallbackEvaluator
-from src.llm.ollama_provider import OllamaEvaluator
+from src.llm.groq_provider import GroqEvaluator
 from src.llm.rate_limit import call_with_retry, is_rate_limit_error
 
 # ── Test doubles ─────────────────────────────────────────────────────────────
@@ -62,31 +62,42 @@ def test_unknown_provider_raises() -> None:
         get_llm_provider(LLMConfig(provider="gpt-4"))
 
 
-def test_ollama_returned_directly_not_wrapped() -> None:
-    evaluator = get_llm_provider(LLMConfig(provider="ollama"))
-    assert isinstance(evaluator, OllamaEvaluator)
-
-
-def test_online_provider_wrapped_in_fallback_by_default(monkeypatch) -> None:
+def test_mistral_returned_bare_as_terminal_provider(monkeypatch) -> None:
     monkeypatch.setenv("MISTRAL_API_KEY", "dummy-key")
-    monkeypatch.delenv("LLM_FALLBACK_ENABLED", raising=False)
-    evaluator = get_llm_provider(LLMConfig(provider="mistral"))
-    assert isinstance(evaluator, FallbackEvaluator)
-    assert evaluator.provider_name == "fallback(mistral→ollama)"
-
-
-def test_online_provider_bare_when_fallback_disabled(monkeypatch) -> None:
-    monkeypatch.setenv("MISTRAL_API_KEY", "dummy-key")
-    monkeypatch.setenv("LLM_FALLBACK_ENABLED", "false")
     evaluator = get_llm_provider(LLMConfig(provider="mistral"))
     assert not isinstance(evaluator, FallbackEvaluator)
     assert evaluator.provider_name == "mistral"
 
 
-def test_missing_api_key_raises_not_silently_falls_back(monkeypatch) -> None:
+def test_groq_wrapped_with_mistral_fallback_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "dummy-groq")
+    monkeypatch.setenv("MISTRAL_API_KEY", "dummy-mistral")
+    monkeypatch.delenv("LLM_FALLBACK_ENABLED", raising=False)
+    evaluator = get_llm_provider(LLMConfig(provider="groq"))
+    assert isinstance(evaluator, FallbackEvaluator)
+    assert evaluator.provider_name == "fallback(groq→mistral)"
+
+
+def test_groq_runs_alone_when_no_mistral_key(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "dummy-groq")
     monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="MISTRAL_API_KEY"):
-        get_llm_provider(LLMConfig(provider="mistral"))
+    monkeypatch.delenv("LLM_FALLBACK_ENABLED", raising=False)
+    evaluator = get_llm_provider(LLMConfig(provider="groq"))
+    assert isinstance(evaluator, GroqEvaluator)
+
+
+def test_groq_bare_when_fallback_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("GROQ_API_KEY", "dummy-groq")
+    monkeypatch.setenv("LLM_FALLBACK_ENABLED", "false")
+    evaluator = get_llm_provider(LLMConfig(provider="groq"))
+    assert isinstance(evaluator, GroqEvaluator)
+    assert evaluator.provider_name == "groq"
+
+
+def test_missing_api_key_raises_not_silently_falls_back(monkeypatch) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="GROQ_API_KEY"):
+        get_llm_provider(LLMConfig(provider="groq"))
 
 
 # ── Fallback behaviour ───────────────────────────────────────────────────────

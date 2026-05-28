@@ -3,7 +3,6 @@ description: "Smoke test: DP en dataset small sin LLM — verifica que el pipeli
 
 dataset:
   path: data/small/
-  split: all
 
 algorithms:
   - name: dynamic_programming

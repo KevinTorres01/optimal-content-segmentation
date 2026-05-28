@@ -33,7 +33,7 @@ def smoke_env(tmp_path_factory: pytest.TempPathFactory) -> dict:
     config = {
         "experiment_id": "smoke_test",
         "description": "Integration smoke test",
-        "dataset": {"path": str(dataset_dir), "split": "all"},
+        "dataset": {"path": str(dataset_dir)},
         "algorithms": [{"name": "dynamic_programming", "params": {"max_segments": 3}}],
         "llm_evaluator": {"provider": "none", "temperature": 0.0, "max_tokens": 512},
         "evaluation": {
