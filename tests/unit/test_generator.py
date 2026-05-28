@@ -29,6 +29,7 @@ def config(base_config: dict) -> DatasetConfig:
 
 # ── Schema validation ─────────────────────────────────────────────────────────
 
+
 def test_missing_random_seed_raises() -> None:
     with pytest.raises(ValidationError):
         DatasetConfig(
@@ -53,6 +54,7 @@ def test_invalid_language_raises(base_config: dict) -> None:
 
 
 # ── Generation correctness ────────────────────────────────────────────────────
+
 
 def test_generates_correct_number_of_documents(
     config: DatasetConfig, tmp_path: Path
@@ -106,9 +108,9 @@ def test_deterministic_with_seed(config: DatasetConfig, tmp_path: Path) -> None:
     docs2 = sorted((out2 / "documents").glob("*.txt"))
     assert len(docs1) == len(docs2)
     for f1, f2 in zip(docs1, docs2):
-        assert f1.read_text() == f2.read_text(), (
-            f"Non-deterministic output between runs for {f1.name}"
-        )
+        assert (
+            f1.read_text() == f2.read_text()
+        ), f"Non-deterministic output between runs for {f1.name}"
 
 
 def test_english_language_generates_documents(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import concurrent.futures
-from dataclasses import replace
 
 from src.core.interfaces import BaseLLMEvaluator
 from src.core.models import CohesionScore, Segment
@@ -55,8 +54,22 @@ class FallbackEvaluator(BaseLLMEvaluator):
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(self._primary.score_segment, segment)
-                score = future.result(timeout=self._timeout)
-            return score
+                return future.result(timeout=self._timeout)
         except Exception:
+            pass
+
+        try:
             score = self._fallback.score_segment(segment)
-            return replace(score, used_fallback=True)
+            return score.model_copy(update={"used_fallback": True})
+        except Exception:
+            # Both providers are unavailable (e.g. no internet AND no local
+            # Ollama). Return a neutral score so a long experiment completes
+            # instead of crashing; the rationale flags it for later filtering.
+            return CohesionScore(
+                segment_id=segment.segment_id,
+                score=3,
+                rationale="Both primary and fallback providers failed",
+                provider=self.provider_name,
+                model=self.model_name,
+                used_fallback=True,
+            )

@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -37,7 +36,10 @@ def smoke_env(tmp_path_factory: pytest.TempPathFactory) -> dict:
         "dataset": {"path": str(dataset_dir), "split": "all"},
         "algorithms": [{"name": "dynamic_programming", "params": {"max_segments": 3}}],
         "llm_evaluator": {"provider": "none", "temperature": 0.0, "max_tokens": 512},
-        "evaluation": {"metrics": ["windowdiff", "pk", "f1_boundary"], "random_seed": 42},
+        "evaluation": {
+            "metrics": ["windowdiff", "pk", "f1_boundary"],
+            "random_seed": 42,
+        },
         "output": {"path": str(results_dir), "save_raw": True},
     }
     config_path = base / "smoke_test.yaml"
@@ -65,11 +67,18 @@ def test_results_json_has_correct_document_count(smoke_env: dict) -> None:
 def test_results_json_has_required_fields(smoke_env: dict) -> None:
     results_file = smoke_env["results_dir"] / "results.json"
     results = json.loads(results_file.read_text(encoding="utf-8"))
-    required = {"doc_id", "algorithm", "pk", "windowdiff", "f1_boundary", "runtime_seconds"}
+    required = {
+        "doc_id",
+        "algorithm",
+        "pk",
+        "windowdiff",
+        "f1_boundary",
+        "runtime_seconds",
+    }
     for entry in results:
-        assert required.issubset(entry.keys()), (
-            f"Missing fields in result entry: {required - entry.keys()}"
-        )
+        assert required.issubset(
+            entry.keys()
+        ), f"Missing fields in result entry: {required - entry.keys()}"
 
 
 def test_metrics_are_finite_and_in_range(smoke_env: dict) -> None:
@@ -77,8 +86,12 @@ def test_metrics_are_finite_and_in_range(smoke_env: dict) -> None:
     results = json.loads(results_file.read_text(encoding="utf-8"))
     for entry in results:
         assert 0.0 <= entry["pk"] <= 1.0, f"pk={entry['pk']} out of [0,1]"
-        assert 0.0 <= entry["windowdiff"] <= 1.0, f"wd={entry['windowdiff']} out of [0,1]"
-        assert 0.0 <= entry["f1_boundary"] <= 1.0, f"f1={entry['f1_boundary']} out of [0,1]"
+        assert (
+            0.0 <= entry["windowdiff"] <= 1.0
+        ), f"wd={entry['windowdiff']} out of [0,1]"
+        assert (
+            0.0 <= entry["f1_boundary"] <= 1.0
+        ), f"f1={entry['f1_boundary']} out of [0,1]"
         assert entry["runtime_seconds"] >= 0.0
 
 

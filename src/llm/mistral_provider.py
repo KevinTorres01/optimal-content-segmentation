@@ -7,7 +7,8 @@ from mistralai.client import Mistral
 
 from src.core.interfaces import BaseLLMEvaluator
 from src.core.models import CohesionScore, Segment
-from src.llm.prompts import COHESION_SCORING_PROMPT
+from src.llm.prompts import COHESION_SCORING_PROMPT, parse_cohesion_response
+from src.llm.rate_limit import call_with_retry, throttle_from_env
 
 _DEFAULT_MODEL = "mistral-large-latest"
 
@@ -23,7 +24,7 @@ class MistralEvaluator(BaseLLMEvaluator):
         self,
         model: str = _DEFAULT_MODEL,
         temperature: float = 0.0,
-        max_tokens: int = 256,
+        max_tokens: int = 512,
     ) -> None:
         """Initialize the Mistral evaluator.
 
@@ -42,6 +43,7 @@ class MistralEvaluator(BaseLLMEvaluator):
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._client = Mistral(api_key=api_key)
+        self._throttle = throttle_from_env()
 
     @property
     def provider_name(self) -> str:
@@ -65,18 +67,22 @@ class MistralEvaluator(BaseLLMEvaluator):
     def _score_one(self, segment: Segment) -> CohesionScore:
         prompt = COHESION_SCORING_PROMPT.format(segment_text=segment.text)
         try:
-            response = self._client.chat.complete(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self._temperature,
-                max_tokens=self._max_tokens,
+            self._throttle.wait()
+            response = call_with_retry(
+                lambda: self._client.chat.complete(
+                    model=self._model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=self._temperature,
+                    max_tokens=self._max_tokens,
+                    response_format={"type": "json_object"},
+                )
             )
             raw = response.choices[0].message.content or ""
-            data = json.loads(raw.strip())
+            data = parse_cohesion_response(raw)
             return CohesionScore(
                 segment_id=segment.segment_id,
-                score=int(data["score"]),
-                rationale=str(data["rationale"]),
+                score=data["score"],
+                rationale=data["rationale"],
                 provider=self.provider_name,
                 model=self.model_name,
             )

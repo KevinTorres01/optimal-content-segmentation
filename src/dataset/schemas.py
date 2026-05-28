@@ -19,5 +19,5 @@ class DatasetConfig(BaseModel):
     sentences_per_segment: RangeConfig
     topic_source: Literal["synthetic_templates"] = "synthetic_templates"
     overlap_level: Literal["low", "medium", "high"] = "low"
-    random_seed: int      # mandatory — Pydantic rejects configs missing this field
+    random_seed: int  # mandatory — Pydantic rejects configs missing this field
     language: Literal["es", "en"] = "es"

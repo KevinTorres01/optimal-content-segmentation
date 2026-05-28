@@ -94,10 +94,10 @@ class CohesionScore(BaseModel):
     """LLM-generated semantic cohesion score for a single segment."""
 
     segment_id: str
-    score: int          # 1–5 scale
+    score: int  # 1–5 scale
     rationale: str
-    provider: str       # e.g. "mistral", "deepseek", "ollama"
-    model: str          # e.g. "mistral-large-latest"
+    provider: str  # e.g. "mistral", "deepseek", "ollama"
+    model: str  # e.g. "mistral-large-latest"
     used_fallback: bool = False
 
     @field_validator("score")
@@ -124,7 +124,7 @@ class RangeConfig(BaseModel):
 class LLMConfig(BaseModel):
     """LLM evaluator configuration block inside an experiment config."""
 
-    provider: str           # "mistral" | "deepseek" | "ollama" | "none"
+    provider: str  # "mistral" | "deepseek" | "ollama" | "none"
     model: str | None = None
     temperature: float = 0.0
     max_tokens: int = 512

@@ -9,8 +9,8 @@ from src.core.models import (
     SegmentationResult,
 )
 
-
 # ── Document ──────────────────────────────────────────────────────────────────
+
 
 def test_document_empty_sentences_raises() -> None:
     with pytest.raises(ValidationError):
@@ -29,6 +29,7 @@ def test_document_text_joins_sentences() -> None:
 
 # ── Segment ───────────────────────────────────────────────────────────────────
 
+
 def test_segment_empty_sentences_raises() -> None:
     with pytest.raises(ValidationError):
         Segment(segment_id="s1", sentences=[])
@@ -40,6 +41,7 @@ def test_segment_text_property() -> None:
 
 
 # ── SegmentationResult ────────────────────────────────────────────────────────
+
 
 def test_segmentation_result_first_boundary_must_be_zero() -> None:
     with pytest.raises(ValidationError):
@@ -109,6 +111,7 @@ def test_segmentation_result_boundary_out_of_range_raises() -> None:
 
 # ── CohesionScore ─────────────────────────────────────────────────────────────
 
+
 def test_cohesion_score_invalid_score_raises() -> None:
     with pytest.raises(ValidationError):
         CohesionScore(
@@ -143,6 +146,7 @@ def test_cohesion_score_used_fallback_defaults_to_false() -> None:
 
 
 # ── ABCs cannot be instantiated ───────────────────────────────────────────────
+
 
 def test_base_segmenter_cannot_be_instantiated() -> None:
     with pytest.raises(TypeError):

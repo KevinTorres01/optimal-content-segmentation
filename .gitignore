@@ -143,8 +143,7 @@ orientacion.md
 *.csv
 *.xlsx
 *.json
-!data/
 !config/
-data/*.csv
-data/*.json
+# Datasets and results are regenerable from configs + seed — never commit them
+data/
 results/

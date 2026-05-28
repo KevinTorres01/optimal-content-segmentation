@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +9,6 @@ import numpy as np
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from src.dataset.schemas import DatasetConfig
-
 
 # ── Topic sentence templates ──────────────────────────────────────────────────
 
@@ -170,9 +168,7 @@ class DatasetGenerator:
 
     def __init__(self, config: DatasetConfig) -> None:
         self._config = config
-        self._templates = (
-            _TEMPLATES_ES if config.language == "es" else _TEMPLATES_EN
-        )
+        self._templates = _TEMPLATES_ES if config.language == "es" else _TEMPLATES_EN
         self._topics = list(self._templates.keys())
 
     def generate(self, output_dir: Path) -> DatasetMetadata:
@@ -323,9 +319,7 @@ class DatasetGenerator:
             for i in range(n_overlap):
                 other = str(rng.choice(other_topics))
                 other_pool = self._templates[other]
-                selected[-(i + 1)] = other_pool[
-                    int(rng.integers(0, len(other_pool)))
-                ]
+                selected[-(i + 1)] = other_pool[int(rng.integers(0, len(other_pool)))]
 
         return selected[:n]
 

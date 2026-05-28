@@ -12,13 +12,13 @@ from rich.table import Table
 
 from src.algorithms import ALGORITHM_REGISTRY
 from src.core.config import load_config
-from src.core.models import Document, ExperimentConfig
+from src.core.models import Document
 from src.evaluation.metrics import (
     compute_f1_boundary,
     compute_pk,
     compute_window_diff,
 )
-from src.llm import PROVIDER_REGISTRY
+from src.llm import get_llm_provider
 
 console = Console()
 
@@ -38,9 +38,7 @@ def _load_dataset(dataset_path: Path) -> list[tuple[Document, list[int]]]:
     if not docs_dir.exists():
         raise FileNotFoundError(f"Dataset documents directory not found: {docs_dir}")
     if not bounds_dir.exists():
-        raise FileNotFoundError(
-            f"Dataset boundaries directory not found: {bounds_dir}"
-        )
+        raise FileNotFoundError(f"Dataset boundaries directory not found: {bounds_dir}")
 
     dataset: list[tuple[Document, list[int]]] = []
     for doc_file in sorted(docs_dir.glob("*.txt")):
@@ -82,20 +80,12 @@ def run_experiment(config_path: Path) -> None:
     dataset = _load_dataset(dataset_path)
     console.print(f"  Loaded {len(dataset)} documents")
 
-    llm_evaluator = None
-    if config.llm_evaluator.provider != "none":
-        provider_cls = PROVIDER_REGISTRY.get(config.llm_evaluator.provider)
-        if provider_cls is None:
-            console.print(
-                f"[red]Unknown LLM provider: {config.llm_evaluator.provider}. "
-                f"Available: {list(PROVIDER_REGISTRY.keys())}"
-            )
-            sys.exit(1)
-        model = config.llm_evaluator.model
-        kwargs = {"temperature": config.llm_evaluator.temperature}
-        if model:
-            kwargs["model"] = model
-        llm_evaluator = provider_cls(**kwargs)
+    try:
+        llm_evaluator = get_llm_provider(config.llm_evaluator)
+    except ValueError as exc:
+        console.print(f"[red]{exc}")
+        sys.exit(1)
+    if llm_evaluator is not None:
         console.print(
             f"  LLM evaluator: [cyan]{llm_evaluator.provider_name}[/] / "
             f"[cyan]{llm_evaluator.model_name}[/]"
@@ -175,12 +165,7 @@ def run_experiment(config_path: Path) -> None:
     if "llm_score" in df.columns and df["llm_score"].notna().any():
         numeric_cols.append("llm_score")
 
-    summary = (
-        df.groupby("algorithm")[numeric_cols]
-        .mean()
-        .round(4)
-        .reset_index()
-    )
+    summary = df.groupby("algorithm")[numeric_cols].mean().round(4).reset_index()
     summary_path = output_path / "summary.csv"
     summary.to_csv(summary_path, index=False)
 

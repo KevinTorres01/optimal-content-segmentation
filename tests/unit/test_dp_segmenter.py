@@ -41,6 +41,7 @@ def segmenter() -> DPSegmenter:
 
 # ── Basic contract ────────────────────────────────────────────────────────────
 
+
 def test_returns_segmentation_result(
     segmenter: DPSegmenter, sports_tech_science_doc: Document
 ) -> None:
@@ -85,6 +86,7 @@ def test_runtime_is_recorded(
 
 # ── max_segments ──────────────────────────────────────────────────────────────
 
+
 def test_respects_max_segments(
     segmenter: DPSegmenter, sports_tech_science_doc: Document
 ) -> None:
@@ -101,6 +103,7 @@ def test_max_segments_one_returns_single_segment(
 
 
 # ── Edge cases ────────────────────────────────────────────────────────────────
+
 
 def test_single_sentence_document(
     segmenter: DPSegmenter, single_sentence_doc: Document

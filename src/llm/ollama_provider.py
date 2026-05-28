@@ -7,7 +7,7 @@ import ollama as ollama_sdk
 
 from src.core.interfaces import BaseLLMEvaluator
 from src.core.models import CohesionScore, Segment
-from src.llm.prompts import COHESION_SCORING_PROMPT
+from src.llm.prompts import COHESION_SCORING_PROMPT, parse_cohesion_response
 
 _DEFAULT_MODEL = "llama3.2:3b"
 
@@ -38,15 +38,9 @@ class OllamaEvaluator(BaseLLMEvaluator):
             model: Ollama model name (overrides OLLAMA_MODEL env var).
             base_url: Ollama server URL (overrides OLLAMA_BASE_URL env var).
         """
-        self._model = (
-            model
-            or os.environ.get("OLLAMA_MODEL")
-            or _DEFAULT_MODEL
-        )
+        self._model = model or os.environ.get("OLLAMA_MODEL") or _DEFAULT_MODEL
         self._base_url = (
-            base_url
-            or os.environ.get("OLLAMA_BASE_URL")
-            or "http://localhost:11434"
+            base_url or os.environ.get("OLLAMA_BASE_URL") or "http://localhost:11434"
         )
 
     @property
@@ -77,15 +71,14 @@ class OllamaEvaluator(BaseLLMEvaluator):
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
                 options={"temperature": 0.0},
+                format="json",
             )
             raw = response.message.content or ""
-            # Strip potential markdown fences that local models sometimes add
-            raw = raw.strip().removeprefix("```json").removesuffix("```").strip()
-            data = json.loads(raw)
+            data = parse_cohesion_response(raw)
             return CohesionScore(
                 segment_id=segment.segment_id,
-                score=int(data["score"]),
-                rationale=str(data["rationale"]),
+                score=data["score"],
+                rationale=data["rationale"],
                 provider=self.provider_name,
                 model=self.model_name,
             )
