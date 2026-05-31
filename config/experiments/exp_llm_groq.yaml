@@ -1,5 +1,5 @@
 experiment_id: exp_llm_groq
-description: "DP en dataset small con evaluación de cohesión por Groq (fallback a Mistral si Groq falla)"
+description: "DP, Greedy y SA en dataset small con evaluación de cohesión por Groq (fallback a Mistral)"
 
 dataset:
   path: data/small/
@@ -8,6 +8,16 @@ algorithms:
   - name: dynamic_programming
     params:
       max_segments: 5
+  - name: greedy
+    params:
+      max_segments: 5
+      window_size: 2
+  - name: simulated_annealing
+    params:
+      max_segments: 5
+      n_iterations: 2000
+      cooling_rate: 0.995
+      random_seed: 42
 
 llm_evaluator:
   provider: groq

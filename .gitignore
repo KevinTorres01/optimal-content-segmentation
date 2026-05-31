@@ -139,11 +139,11 @@ CLAUDE.md
 SKILLS.md
 orientacion.md
 
-# Project specific
+# Project specific — raw output files, never commit
 *.csv
 *.xlsx
 *.json
-!config/
+!config/**/*.json
 # Datasets and results are regenerable from configs + seed — never commit them
 data/
 results/

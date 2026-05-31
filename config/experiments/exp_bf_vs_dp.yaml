@@ -1,0 +1,24 @@
+experiment_id: exp_bf_vs_dp
+description: "Brute Force vs Dynamic Programming on tiny dataset (n<=12) — validates DP finds the same global optimum as exhaustive search"
+
+dataset:
+  path: data/tiny/
+
+algorithms:
+  - name: brute_force
+    params:
+      max_segments: 3
+  - name: dynamic_programming
+    params:
+      max_segments: 3
+
+llm_evaluator:
+  provider: none
+
+evaluation:
+  metrics: [windowdiff, pk, f1_boundary, runtime_seconds]
+  random_seed: 42
+
+output:
+  path: results/exp_bf_vs_dp/
+  save_raw: true

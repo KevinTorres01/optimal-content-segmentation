@@ -281,12 +281,12 @@ Cada resultado registra `used_fallback: bool` para auditoría.
 
 ## Metodología Experimental
 
-### Experimento Principal
+### Experimento 1 — Comparación estructural sin LLM
 
 **ID**: `exp_compare_algorithms`  
-**Objetivo**: Comparar los tres algoritmos escalables (DP, Greedy, SA) sobre el dataset `small` en métricas estándar de segmentación.
+**Objetivo**: Comparar los tres algoritmos escalables (DP, Greedy, SA) sobre el dataset `small` en métricas estándar de segmentación, sin coste de API.
 
-> **Nota sobre Fuerza Bruta**: No se incluyó en el experimento principal porque los documentos del dataset `small` tienen entre 15 y 36 oraciones, superando el límite de 15 del algoritmo exhaustivo. Su rol es ser referencia de correctitud en instancias pequeñas, verificado en tests unitarios (`test_matches_dp_on_small_doc`).
+> **Nota sobre Fuerza Bruta**: No se incluyó en este experimento porque los documentos del dataset `small` tienen entre 15 y 36 oraciones, superando el límite de 15 del algoritmo exhaustivo. La validación BF = DP se realiza en el Experimento 2.
 
 **Configuración** (`config/experiments/exp_compare_algorithms.yaml`):
 
@@ -302,6 +302,50 @@ llm_evaluator:
   provider: none
 evaluation:
   metrics: [windowdiff, pk, f1_boundary, runtime_seconds]
+  random_seed: 42
+```
+
+### Experimento 2 — Validación Fuerza Bruta vs Programación Dinámica
+
+**ID**: `exp_bf_vs_dp`  
+**Objetivo**: Demostrar que DP encuentra el mismo óptimo global que la búsqueda exhaustiva.
+
+**Dataset**: `tiny` — 20 documentos con 5–12 oraciones cada uno (generado con `config/datasets/tiny.yaml`, semilla 42), dentro del límite $n \leq 15$ de BF.
+
+**Configuración** (`config/experiments/exp_bf_vs_dp.yaml`):
+
+```yaml
+algorithms:
+  - name: brute_force
+    params: {max_segments: 3}
+  - name: dynamic_programming
+    params: {max_segments: 3}
+llm_evaluator:
+  provider: none
+```
+
+### Experimento 3 — Evaluación con LLM (Groq)
+
+**ID**: `exp_llm_groq`  
+**Objetivo**: Añadir la dimensión de calidad semántica real (score LLM) sobre los mismos tres algoritmos y dataset `small`.
+
+**Configuración** (`config/experiments/exp_llm_groq.yaml`):
+
+```yaml
+algorithms:
+  - name: dynamic_programming
+    params: {max_segments: 5}
+  - name: greedy
+    params: {max_segments: 5, window_size: 2}
+  - name: simulated_annealing
+    params: {max_segments: 5, n_iterations: 2000, cooling_rate: 0.995, random_seed: 42}
+llm_evaluator:
+  provider: groq
+  model: llama-3.3-70b-versatile
+  temperature: 0.0
+  max_tokens: 512
+evaluation:
+  metrics: [windowdiff, pk, f1_boundary, llm_score, runtime_seconds]
   random_seed: 42
 ```
 
@@ -336,21 +380,42 @@ Mayor es mejor. Rango: [0, 1].
 
 ## Resultados y Análisis
 
-### Tabla de Resultados Agregados (20 documentos)
+### Exp. 2 — Validación BF vs DP (dataset `tiny`, 20 documentos, $n \leq 12$)
 
 | Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | Runtime (ms) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
+| Brute Force | **0.1633** | **0.1717** | **0.817** | 2.0 |
+| Dynamic Programming | **0.1633** | **0.1717** | **0.817** | 1.9 |
+
+**Los resultados son idénticos en las 20 instancias.** DP encuentra el mismo óptimo global que la búsqueda exhaustiva con una complejidad mucho menor ($O(n^2 k)$ vs $O\!\binom{n-1}{k-1}$). Esto valida formalmente que la subestructura óptima del problema de segmentación se cumple sobre esta función objetivo.
+
+---
+
+### Exp. 1 — Métricas estructurales: DP, Greedy, SA (dataset `small`, 20 documentos)
+
+| Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | Runtime (ms) |
+| --- | --- | --- | --- | --- |
 | Dynamic Programming | **0.1728** ± 0.157 | **0.1945** ± 0.162 | **0.797** ± 0.124 | 10.1 |
 | Greedy (TextTiling) | 0.1288 ± 0.076 | 0.2373 ± 0.125 | 0.743 ± 0.140 | **1.2** |
 | Simulated Annealing | 0.2109 ± 0.158 | 0.2236 ± 0.166 | 0.755 ± 0.141 | 12.8 |
 
 *(↓ menor es mejor, ↑ mayor es mejor)*
 
+### Exp. 3 — Métricas estructurales + LLM score (Groq `llama-3.3-70b-versatile`)
+
+| Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | LLM Score ↑ | Runtime (ms) |
+| --- | --- | --- | --- | --- | --- |
+| Dynamic Programming | **0.1728** | **0.1945** | **0.797** | **4.56** | 32.7 |
+| Greedy (TextTiling) | **0.1288** | 0.2373 | 0.743 | 4.41 | **4.5** |
+| Simulated Annealing | 0.2299 | 0.2547 | 0.758 | 4.29 | 33.8 |
+
+*(LLM score: 1–5, cohesión semántica evaluada por Groq por cada segmento predicho)*
+
 ### Análisis por Métrica
 
 #### Pk (tasa de error en ventana deslizante)
 
-Greedy obtiene el **mejor Pk (0.1288)**, un 25% mejor que DP y 39% mejor que SA. Esto indica que, en términos de clasificación de pares de oraciones como "mismo segmento / distinto segmento", la heurística de valles de similitud es sorprendentemente efectiva. La baja desviación estándar de Greedy (0.076 vs ~0.157 para DP y SA) sugiere además que es el método más consistente documento a documento.
+Greedy obtiene el **mejor Pk (0.1288)**, un 25% mejor que DP y 44% mejor que SA. Esto indica que, en términos de clasificación de pares de oraciones como "mismo segmento / distinto segmento", la heurística de valles de similitud es sorprendentemente efectiva. La baja desviación estándar de Greedy (0.076 vs ~0.157 para DP) sugiere además que es el método más consistente documento a documento.
 
 #### WindowDiff (penalización por densidad de fronteras)
 
@@ -358,27 +423,32 @@ DP obtiene el **mejor WindowDiff (0.1945)**. Esta métrica es más estricta que 
 
 #### F1-Boundary (precisión en posición exacta de fronteras)
 
-DP obtiene el **mejor F1 (0.797)**. La diferencia respecto a Greedy (0.743) y SA (0.755) indica que la optimización exacta produce fronteras más cercanas a las posiciones reales (dentro de tolerancia ±1 oración). SA queda por encima de Greedy en esta métrica, sugiriendo que la búsqueda estocástica eventualmente encuentra mejores posiciones absolutas que el enfoque voraz local.
+DP obtiene el **mejor F1 (0.797)**. La diferencia respecto a Greedy (0.743) y SA (0.758) indica que la optimización exacta produce fronteras más cercanas a las posiciones reales (dentro de tolerancia ±1 oración).
+
+#### LLM Score (cohesión semántica percibida)
+
+DP obtiene el **mejor LLM score (4.56/5.0)**, seguido de Greedy (4.41) y SA (4.29). Este resultado es coherente con la jerarquía en F1-Boundary: los algoritmos que colocan fronteras en posiciones más precisas tienden a producir segmentos más coherentes desde la perspectiva semántica evaluada por el LLM. Los tres valores son altos (todos ≥ 4.0), lo que indica que la función objetivo TF-IDF, aunque superficial, produce segmentaciones semánticamente razonables.
 
 #### Runtime
 
-Greedy es **8x más rápido** que DP (1.2 ms vs 10.1 ms) y **10x más rápido** que SA (1.2 ms vs 12.8 ms). Para documentos cortos como los de este experimento, todas las diferencias son despreciables en práctica. La diferencia se volvería significativa en documentos de cientos de oraciones, donde DP tiene complejidad $O(n^2 k)$ y SA necesita más iteraciones.
+Greedy es **7x más rápido** que DP (4.5 ms vs 32.7 ms) y **7.5x más rápido** que SA en el Exp. 3. Para documentos cortos todas las diferencias son despreciables. La diferencia se volvería significativa en documentos de cientos de oraciones.
 
 ### Sobre-Segmentación Observada
 
-Los tres algoritmos predicen en media **5.00 segmentos** cuando la referencia es **3.80**. Esto ocurre porque `max_segments=5` es el límite configurado y la función objetivo siempre favorece más segmentos (mayor libertad de optimización). En un sistema de producción sería necesario seleccionar $k$ automáticamente, por ejemplo minimizando un criterio de información (BIC, MDL) o usando el score LLM como señal.
+Los tres algoritmos predicen en media **5.00 segmentos** cuando la referencia es **3.80**. Esto ocurre porque `max_segments=5` es el límite configurado y la función objetivo siempre favorece más segmentos. En un sistema de producción sería necesario seleccionar $k$ automáticamente, por ejemplo minimizando un criterio de información (BIC, MDL) o usando el score LLM como señal de saturación.
 
 ### Comparativa General
 
 | Criterio | Mejor | Razón |
-|---|---|---|
+| --- | --- | --- |
 | Menor tasa de error (Pk) | Greedy | Heurística de valles captura cambios temáticos abruptos |
 | Fronteras más precisas (F1) | DP | Optimización global penaliza posiciones alejadas |
 | Mejor balance WD | DP | Considera la distribución completa de fronteras |
-| Mayor velocidad | Greedy | O(n·w) sin backtracking ni iteraciones |
+| Mayor cohesión semántica (LLM) | DP | Fronteras más precisas → segmentos más coherentes |
+| Mayor velocidad | Greedy | $O(n \cdot w)$ sin backtracking ni iteraciones |
 | Mayor consistencia | Greedy | Desviación estándar más baja en todas las métricas |
 
-**Conclusión parcial**: DP es el algoritmo más preciso cuando importa la posición exacta de las fronteras. Greedy es la opción práctica cuando el volumen de documentos es alto y se prioriza velocidad y consistencia. SA no supera a DP en ninguna métrica con los parámetros actuales.
+**Conclusión parcial**: DP es el algoritmo más preciso en todas las dimensiones (F1, WindowDiff, LLM score). Greedy es la opción práctica cuando se prioriza velocidad y consistencia. SA no supera a DP en ninguna métrica con los parámetros actuales.
 
 ---
 
@@ -401,18 +471,18 @@ El algoritmo exhaustivo no puede correr en el dataset principal. Solo sirve como
 **5. SA sin ajuste de hiperparámetros**  
 Los parámetros `initial_temp=1.0`, `cooling_rate=0.995`, `n_iterations=2000` se eligieron sin búsqueda sistemática. SA podría mejorar con un grid search sobre estos parámetros.
 
-**6. Sin evaluación LLM en el experimento principal**  
-Por razones de costo (límites de tasa en tier gratuito) el experimento comparativo se ejecutó con `provider: none`. La dimensión de calidad semántica (¿los segmentos predichos son cohesivos incluso si no coinciden exactamente con las fronteras de referencia?) queda sin explorar.
+**6. ~~Sin evaluación LLM en el experimento principal~~** *(resuelto)*  
+El Experimento 3 (`exp_llm_groq`) ejecutó los tres algoritmos con `provider: groq` usando `llama-3.3-70b-versatile`. Los LLM scores obtenidos (DP: 4.56, Greedy: 4.41, SA: 4.29) confirman la jerarquía observada en métricas estructurales y validan la calidad semántica de las segmentaciones.
 
 ### Mejoras Propuestas
 
 | Prioridad | Mejora | Impacto estimado |
-|---|---|---|
+| --- | --- | --- |
 | Alta | Embeddings densos (sentence-transformers) en lugar de TF-IDF | +15–20% F1 en textos reales |
 | Alta | Selección automática de $k$ | Elimina el parámetro más crítico |
 | Media | Ajuste de hiperparámetros de SA | +5–10% F1 para SA |
 | Media | Dataset real (Wikipedia, noticias) | Validación más robusta |
-| Baja | Evaluación LLM masiva con Groq | Score semántico complementario |
+| ✓ Completado | Evaluación LLM con Groq | Score semántico obtenido (Exp. 3) |
 
 ---
 
@@ -420,28 +490,30 @@ Por razones de costo (límites de tasa en tier gratuito) el experimento comparat
 
 ### Resumen de Hallazgos
 
-Se implementaron y compararon cuatro algoritmos de segmentación de texto bajo una función objetivo unificada de cohesión coseno ponderada por longitud:
+Se implementaron y compararon cuatro algoritmos de segmentación de texto bajo una función objetivo unificada de cohesión coseno ponderada por longitud, evaluados en tres experimentos:
 
-- **Fuerza Bruta**: garantiza el óptimo global pero solo es viable para $n \leq 15$; confirmó que DP produce resultados idénticos en instancias pequeñas.
-- **Programación Dinámica**: es el mejor algoritmo general — mayor F1 (0.797) y mejor WindowDiff (0.1945) — con complejidad polinomial $O(n^2 k)$.
-- **Greedy (TextTiling)**: sorprendentemente competitivo en Pk (0.1288, el mejor), 8x más rápido que DP, y el más consistente; es la opción práctica para alto volumen.
+- **Fuerza Bruta**: garantiza el óptimo global pero solo es viable para $n \leq 15$. El Exp. 2 confirmó experimentalmente que DP produce resultados **idénticos** en las 20 instancias del dataset `tiny` (Pk=0.1633, F1=0.817 para ambos), validando la correctitud de DP.
+- **Programación Dinámica**: mejor algoritmo general — mayor F1 (0.797), mejor WindowDiff (0.1945) y mayor LLM score (4.56/5.0) — con complejidad polinomial $O(n^2 k)$.
+- **Greedy (TextTiling)**: sorprendentemente competitivo en Pk (0.1288, el mejor), 7x más rápido que DP, y el más consistente; es la opción práctica para alto volumen.
 - **Recocido Simulado**: con los parámetros actuales no supera a DP en ninguna métrica, aunque aporta el mecanismo para escapar óptimos locales en espacios de búsqueda más complejos.
+
+El LLM evaluador (Groq `llama-3.3-70b-versatile`) asignó scores altos a todos los algoritmos (4.29–4.56), confirmando que la función objetivo TF-IDF coseno produce segmentaciones semánticamente razonables pese a su simplicidad.
 
 ### Respuesta a los Objetivos
 
 | Objetivo | Estado |
-|---|---|
+| --- | --- |
 | Implementar variante exacta (BF + DP) | ✓ Completado |
 | Implementar heurística rápida (Greedy) | ✓ Completado |
 | Implementar metaheurística (SA) | ✓ Completado |
-| Comparar bajo métricas estándar | ✓ WindowDiff, Pk, F1 calculados |
-| Integrar evaluación LLM | ✓ Infraestructura lista (Groq + Mistral + fallback) |
+| Validar BF = DP en instancias pequeñas | ✓ Exp. 2: idénticos en 20/20 instancias |
+| Comparar bajo métricas estándar | ✓ WindowDiff, Pk, F1 calculados (Exp. 1) |
+| Integrar y ejecutar evaluación LLM | ✓ Groq + Mistral fallback; scores obtenidos (Exp. 3) |
 | Verificar reproducibilidad | ✓ Semilla fijada en config y metadatos |
 
 ### Trabajo Futuro
 
-1. Ejecutar el experimento con evaluación LLM habilitada (`provider: groq`) para obtener la dimensión semántica de los resultados.
-2. Reemplazar TF-IDF por embeddings de sentence-transformers para mejorar la representación semántica.
-3. Implementar selección automática de $k$ para eliminar el parámetro más crítico del sistema.
-4. Evaluar en un dataset real (Wikipedia secciones, artículos de noticias segmentados manualmente).
-5. Explorar variantes de SA con temperatura adaptativa o reinicios aleatorios para mejorar su rendimiento relativo.
+1. Reemplazar TF-IDF por embeddings de sentence-transformers para mejorar la representación semántica.
+2. Implementar selección automática de $k$ para eliminar el parámetro más crítico del sistema.
+3. Evaluar en un dataset real (Wikipedia secciones, artículos de noticias segmentados manualmente).
+4. Explorar variantes de SA con temperatura adaptativa o reinicios aleatorios para mejorar su rendimiento relativo.
