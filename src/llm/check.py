@@ -37,7 +37,7 @@ def check_provider(provider: str, model: str | None = None) -> bool:
     online provider is reachable before committing to a full run.
 
     Args:
-        provider: One of "mistral", "deepseek", "ollama".
+        provider: One of "groq", "mistral".
         model: Optional model override.
 
     Returns:

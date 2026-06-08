@@ -265,10 +265,15 @@ class DatasetGenerator:
             Tuple of (sentences, boundaries) where boundaries[0] == 0.
         """
         cfg = self._config
+        # Each segment must have a distinct topic so the ground-truth boundary
+        # corresponds to a real semantic shift. Cap n_segments at the available
+        # pool size — otherwise EN configs (3 topics) crash with replace=False.
+        max_possible = len(self._topics)
         n_segments = int(
             rng.integers(cfg.segments_per_doc.min, cfg.segments_per_doc.max + 1)
         )
-        topic_indices = rng.choice(len(self._topics), size=n_segments, replace=False)
+        n_segments = min(n_segments, max_possible)
+        topic_indices = rng.choice(max_possible, size=n_segments, replace=False)
         chosen_topics = [self._topics[i] for i in topic_indices]
 
         sentences: list[str] = []

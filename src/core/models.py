@@ -62,6 +62,8 @@ class SegmentationResult(BaseModel):
             raise ValueError("First boundary must be 0 (start of document)")
         if self.boundaries != sorted(self.boundaries):
             raise ValueError("boundaries must be in ascending order")
+        if len(set(self.boundaries)) != len(self.boundaries):
+            raise ValueError("boundaries must be strictly ascending (no duplicates)")
         return self
 
     def validate_against_document(self, document: Document) -> None:
@@ -96,8 +98,8 @@ class CohesionScore(BaseModel):
     segment_id: str
     score: int  # 1–5 scale
     rationale: str
-    provider: str  # e.g. "mistral", "deepseek", "ollama"
-    model: str  # e.g. "mistral-large-latest"
+    provider: str  # e.g. "groq", "mistral"
+    model: str  # e.g. "mistral-large-latest", "llama-3.3-70b-versatile"
     used_fallback: bool = False
 
     @field_validator("score")
@@ -124,7 +126,7 @@ class RangeConfig(BaseModel):
 class LLMConfig(BaseModel):
     """LLM evaluator configuration block inside an experiment config."""
 
-    provider: str  # "mistral" | "deepseek" | "ollama" | "none"
+    provider: str  # "groq" | "mistral" | "none"
     model: str | None = None
     temperature: float = 0.0
     max_tokens: int = 512

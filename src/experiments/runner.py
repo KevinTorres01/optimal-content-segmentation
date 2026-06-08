@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 from datetime import datetime, timezone
@@ -103,8 +104,20 @@ def run_experiment(config_path: Path) -> None:
             )
             continue
 
-        max_segments = algo_config.params.get("max_segments")
-        algorithm = algo_cls()
+        params = dict(algo_config.params)
+        max_segments = params.pop("max_segments", None)
+        # Default any unset random_seed to the experiment-wide seed so SA (and any
+        # future stochastic algorithm) stays reproducible even when the YAML omits it.
+        constructor_params = inspect.signature(algo_cls).parameters
+        if "random_seed" in constructor_params and "random_seed" not in params:
+            params["random_seed"] = config.evaluation.random_seed
+        try:
+            algorithm = algo_cls(**params)
+        except TypeError as exc:
+            console.print(
+                f"[red]Invalid params for {algo_config.name}: {exc}[/]"
+            )
+            continue
         console.print(f"\nRunning algorithm: [bold]{algo_config.name}[/]")
 
         with Progress(
