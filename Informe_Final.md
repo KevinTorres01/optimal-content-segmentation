@@ -1032,21 +1032,53 @@ source .venv/bin/activate   # en Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 15.3 Configurar API keys (opcional)
+### 15.3 Configurar API keys (opcional para experimentos con LLM)
 
-Solo necesario si vas a ejecutar experimentos con LLM. Para experimentos solo estructurales (sin LLM), salta este paso.
+Este paso es **obligatorio si quieres ejecutar experimentos con evaluación LLM** (Experimento 3). Para experimentos 1 y 2 (solo métricas estructurales), puedes saltarlo.
+
+#### Paso 1: Copiar el template
 
 ```bash
 cp .env.example .env
-# Edita .env y añade:
-# GROQ_API_KEY=gsk_...
-# MISTRAL_API_KEY=...
 ```
 
-Las claves se obtienen gratis en:
+Esto crea un archivo `.env` (que **no debe comitearse**, ya está en `.gitignore`).
 
-- Groq: `console.groq.com`
-- Mistral: `console.mistral.ai`
+#### Paso 2: Obtener las claves
+
+##### Proveedor principal: Groq (Llama 3.3 70B)
+
+1. Ir a [console.groq.com](https://console.groq.com/) y registrarse (gratis, sin tarjeta de crédito)
+2. Navegar a "API Keys" en el menú lateral
+3. Copiar la clave generada (empieza con `gsk_`)
+4. Pegarla en `.env` en la línea: `GROQ_API_KEY=gsk_<tu_clave_aquí>`
+
+##### Proveedor fallback: Mistral (mistral-large-latest) — OPCIONAL
+
+1. Ir a [console.mistral.ai](https://console.mistral.ai/) y registrarse (gratis)
+2. Ir a "API Keys"
+3. Copiar la clave (empieza con `sk-`)
+4. Pegarla en `.env` en la línea: `MISTRAL_API_KEY=sk_<tu_clave_aquí>`
+
+Si no configuras Mistral, los experimentos seguirán funcionando pero sin fallback automático.
+
+#### Paso 3: Verificar la configuración
+
+El archivo `.env` debe quedar así:
+
+```bash
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MISTRAL_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+LLM_FALLBACK_ENABLED=true
+LLM_TIMEOUT_SECONDS=30
+LLM_MIN_REQUEST_INTERVAL_SECONDS=1.5
+```
+
+##### Notas sobre las variables opcionales
+
+- `LLM_FALLBACK_ENABLED=true`: Si Groq falla, reintentar con Mistral automáticamente. Cambiar a `false` para desactivar fallback.
+- `LLM_TIMEOUT_SECONDS=30`: Segundos de espera antes de fallar. Los tier gratuitos pueden ser lentos, 30 segundos es conservador.
+- `LLM_MIN_REQUEST_INTERVAL_SECONDS=1.5`: Pausa mínima entre llamadas para no exceder rate limits gratuitos. Cambiar a `0` solo si tienes tier de pago (mucho más rápido).
 
 ### 15.4 Verificar conectividad con el LLM
 
