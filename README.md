@@ -60,10 +60,13 @@ src/
 
 config/
 ├── datasets/
-│   └── small.yaml         # 20-document dataset config
+│   ├── small.yaml                    # 20-document dataset, 15–36 sentences/doc
+│   └── tiny.yaml                     # 20-document dataset, 5–12 sentences/doc (BF-friendly)
 └── experiments/
-    ├── smoke_test.yaml    # End-to-end test without LLM
-    └── exp_llm_groq.yaml  # Experiment with Groq LLM evaluation
+    ├── smoke_test.yaml               # End-to-end test without LLM
+    ├── exp_compare_algorithms.yaml   # DP vs Greedy vs SA on `small`, no LLM
+    ├── exp_bf_vs_dp.yaml             # Brute Force vs DP on `tiny` (correctness validation)
+    └── exp_llm_groq.yaml             # Full experiment with Groq LLM evaluation
 
 tests/
 ├── unit/
