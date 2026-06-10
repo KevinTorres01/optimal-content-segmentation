@@ -222,6 +222,8 @@ que cumplen tres restricciones:
 2. $0 = b_1 < b_2 < \ldots < b_k \leq n - 1$ — están en orden estrictamente creciente.
 3. $k \leq k_{\max}$ — el número de segmentos no excede un máximo configurado.
 
+> **Matiz de implementación**: la restricción $k \leq k_{\max}$ es la del **modelo formal**. En el código, **Brute Force** enumera exactamente $k = k_{\max}$ segmentos (vía `combinations(range(1, n), k - 1)` en [src/algorithms/brute_force.py:79](src/algorithms/brute_force.py#L79)). **Programación Dinámica** llena la tabla `dp[i][j]` para todo $j \in [1, k_{\max}]$, pero el backtracking actual ([src/algorithms/dynamic_programming.py:89-94](src/algorithms/dynamic_programming.py#L89-L94)) recorre los candidatos de $k_{\max}$ hacia abajo y se queda con el primero finito: como `dp[n][k_max]` siempre es finito cuando $n \geq k_{\max}$, **en la práctica DP también satura $k_{\max}$ siempre**. Es decir, en la implementación actual ambos algoritmos devuelven exactamente $k_{\max}$ segmentos, lo que explica por qué coinciden bit a bit en las 20 instancias del dataset `tiny`. La tabla DP sí soporta de forma natural una selección de "mejor $k$" (comparando `dp[n][j]` entre todos los $j$), pero esa selección no está activada en el código y es una de las mejoras propuestas en §13. Esto no invalida los resultados: en ambos datasets el óptimo de cohesión satura $k_{\max}$ y el comportamiento "selecciona el mejor $k$" coincidiría con "fija $k = k_{\max}$".
+
 Cada frontera $b_j$ marca el **inicio de un segmento**. El segmento $S_j$ se define como las oraciones desde la posición $b_j$ hasta la posición $b_{j+1} - 1$ (y el último segmento llega hasta el final del documento).
 
 **Ejemplo**: con $n = 11$ y $B = (0, 3, 7)$:
@@ -288,19 +290,22 @@ Caso especial: si el segmento tiene **una sola oración**, no hay pares, así qu
 
 ### 5.2 ¿Por qué multiplicamos por la longitud?
 
-Sin el factor de longitud, la función objetivo se "rompe" de forma absurda. Veámoslo con un caso:
+Para entender el factor de longitud, consideremos primero qué pasaría **si no estuviera** y la función objetivo fuera simplemente $\sum_j \overline{\cos}(S_j)$ (la suma de cosenos promedio por segmento).
 
-Imagina un documento de 10 oraciones que segmentamos en **10 segmentos de una oración cada uno**. Cada segmento tiene cohesión cero (un solo elemento, sin pares). Total: 0.
+**Supongamos un documento de 10 oraciones y comparemos tres segmentaciones**, todas evaluadas con la versión **sin factor de longitud** (solo $\overline{\cos}$):
 
-Ahora segmentamos el mismo documento en **2 segmentos de 5 oraciones cada uno**, con cohesión promedio 0,8 cada uno. Total: 0,8 + 0,8 = 1,6. Mucho mejor que la opción anterior.
+- **Segmentación A — 10 segmentos de 1 oración**: cada segmento tiene 0 pares, así que $\overline{\cos} = 0$ por convención. Total: $0$.
+- **Segmentación B — 2 segmentos de 5 oraciones**, cada uno con $\overline{\cos} = 0{,}8$. Total: $0{,}8 + 0{,}8 = 1{,}6$.
+- **Segmentación C — 1 segmento "casi todo" de 9 oraciones con $\overline{\cos} = 0{,}75$ + 1 oración aislada con $\overline{\cos} = 0$**. Total: $0{,}75$.
 
-¡Bien! Pero el problema aparece si segmentamos así: **1 segmento de 9 oraciones + 1 segmento de 1 oración**. La oración aislada da cero, pero el otro segmento da, digamos, 0,75. Total: 0,75.
+Hasta aquí B parece la mejor. Pero hay un escenario patológico: si en el documento existen **2 oraciones casi idénticas** (por ejemplo dos copias del mismo título), un segmento de tamaño 2 que las agrupe da $\overline{\cos} \approx 1$. Si el algoritmo es libre de elegir cuántos segmentos hacer y la función objetivo es solo $\sum \overline{\cos}$, le sale "gratis" insertar fronteras alrededor de ese par para conseguir una contribución de $1{,}0$ sin esfuerzo. El algoritmo se ve incentivado a **buscar pares triviales en lugar de buena cobertura del documento**.
 
-Comparado con la versión de 2 segmentos de 5 oraciones, esta opción es peor. Hasta aquí todo bien.
+**La solución del factor $\frac{j - i + 1}{n}$**: ahora la cohesión definida del segmento, $\text{cohesion}(i,j) = \overline{\cos}(S) \cdot \frac{j-i+1}{n}$, descuenta cualquier segmento corto. Con la fórmula completa:
 
-**Pero**: si el algoritmo puede elegir libremente cuántos segmentos hacer, y descubrimos un segmento de 2 oraciones idénticas (similitud coseno = 1), pondría una frontera allí. Y un segmento de 2 oraciones con coseno 1 da cohesión 1. Es como ganar gratis. El algoritmo se ve incentivado a buscar pares triviales.
+- Segmentación B (2 segmentos × 5 oraciones, $\overline{\cos}=0{,}8$): $0{,}8 \cdot \tfrac{5}{10} + 0{,}8 \cdot \tfrac{5}{10} = 0{,}8$.
+- Pareja trivial (segmento de 2 oraciones idénticas, $\overline{\cos}=1{,}0$): $1{,}0 \cdot \tfrac{2}{10} = 0{,}2$, no $1{,}0$.
 
-**La solución del factor $\frac{j - i + 1}{n}$**: ahora ese segmento de 2 oraciones contribuye $1 \cdot \frac{2}{10} = 0{,}2$, no 1. Y un segmento más largo, incluso con cohesión más baja, puede pesar más. Esto **recompensa los segmentos largos con cohesión moderada por encima de los segmentos cortos triviales**, que es lo que queremos.
+Es decir, **un segmento largo con cohesión moderada pesa más que uno corto trivial**, que es exactamente el comportamiento que queremos.
 
 ### 5.3 Cohesión total de una segmentación
 
@@ -407,8 +412,10 @@ SALIDA: mejor segmentación B*
          SI val > dp[i][j]:
            dp[i][j] ← val
            split[i][j] ← i'
-5. # Reconstrucción: seguir los punteros desde split[n][k_optimo].
-   i ← n; j ← k_optimo
+5. # Reconstrucción: seguir los punteros desde split[n][k].
+   # (La implementación actual fija best_k = k, ya que dp[n][k] es siempre
+   #  finito para n ≥ k; ver §4.1 matiz de implementación.)
+   i ← n; j ← k
    B ← []
    MIENTRAS j > 0:
      B.insert(0, split[i][j])
@@ -468,7 +475,7 @@ Imagina que dibujamos la curva de similitud $\text{sim}[g]$ para todos los hueco
 
 #### Ventajas y limitaciones
 
-- **Ventaja**: extremadamente rápido. En nuestros experimentos, ~7× más rápido que DP.
+- **Ventaja**: extremadamente rápido. En nuestros experimentos, ~9× más rápido que DP.
 - **Limitación**: no optimiza la función objetivo globalmente. Puede equivocarse si los cambios de tema son sutiles o si hay valles "falsos" por ruido léxico local.
 
 ---
@@ -660,7 +667,17 @@ Optamos por el sintético por tres razones:
 
 La principal **limitación** es que los resultados podrían no extrapolarse perfectamente a documentos reales con vocabulario natural más ruidoso. La sección 13 propone usar Wikipedia como mejora futura.
 
-### 8.2 Cómo se generan los documentos
+### 8.2 ¿Por qué este dataset es válido como benchmark del problema?
+
+Más allá de la justificación práctica (control, costo, reproducibilidad), conviene argumentar que el dataset **cumple las condiciones del problema** según las pide la consigna del Tema 6.
+
+1. **Las fronteras son no ambiguas y conocidas**: cada documento se construye concatenando bloques de oraciones de **tópicos distintos** (deportes, tecnología, ciencia, política, arte, economía, salud, historia). El cambio de tema entre bloques es semánticamente claro, lo que da un **ground truth con baja varianza inter-anotador esperada** — algo difícil de garantizar en datasets reales sin un proceso costoso de doble anotación.
+2. **Las longitudes son representativas**: 15–36 oraciones por documento (`small`) reproducen el tamaño típico de una sección de artículo de Wikipedia o de una entrada de blog corta. No son tan grandes que el espacio combinatorio se vuelva inviable, ni tan pequeños que el problema se trivialice. El dataset `tiny` (5–12 oraciones) está calibrado específicamente para que Brute Force sea viable, habilitando la validación empírica de DP.
+3. **`overlap_level=low` es una elección deliberada y declarada**: las plantillas comparten poco vocabulario entre tópicos, lo que **favorece a TF-IDF**. Esto significa que los resultados absolutos reportados son una **cota superior** del rendimiento esperado en documentos con vocabulario más mezclado. El ordenamiento relativo entre algoritmos —que es lo que el experimento mide— es robusto a este sesgo. La sección 13 propone evaluar también con `overlap_level=medium/high` y con Wikipedia como mejora futura.
+4. **El número de segmentos varía**: la distribución observada (3 segmentos en 8 docs, 4 en 8, 5 en 4) garantiza que los algoritmos no pueden "ganar" eligiendo siempre el mismo $k$ fijo — la calidad depende de la heurística estructural, no de un sesgo trivial.
+5. **Reproducible con semilla fija**: cualquier revisor puede regenerar bit a bit el mismo dataset con `random_seed=42`, lo que satisface el requisito de reproducibilidad implícito en "diseño experimental".
+
+### 8.3 Cómo se generan los documentos
 
 El generador (`src/dataset/generator.py`) funciona así:
 
@@ -671,7 +688,7 @@ El generador (`src/dataset/generator.py`) funciona así:
    - Concatena los segmentos secuencialmente.
    - Registra las posiciones donde empieza cada segmento (las **fronteras de referencia**).
 
-### 8.3 Datasets usados
+### 8.4 Datasets usados
 
 Hay dos datasets generados, ambos en español, semilla 42.
 
@@ -705,7 +722,7 @@ Estadísticas resultantes:
 
 Documentos más cortos (5–12 oraciones) para que la fuerza bruta sea viable. Usado únicamente para validar empíricamente que DP coincide con BF.
 
-### 8.4 Estructura en disco
+### 8.5 Estructura en disco
 
 ```
 data/small/
@@ -854,19 +871,21 @@ La semilla se registra en `run_metadata.json` junto a cada resultado.
 
 | Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | Runtime (ms) |
 |---|---|---|---|---|
-| Dynamic Programming | 0,1728 ± 0,157 | **0,1945** ± 0,162 | **0,797** ± 0,124 | 10,1 |
+| Dynamic Programming | 0,1728 ± 0,157 | **0,1945** ± 0,162 | **0,797** ± 0,124 | 10,8 |
 | Greedy (TextTiling) | **0,1288** ± 0,076 | 0,2373 ± 0,125 | 0,743 ± 0,140 | **1,2** |
-| Simulated Annealing | 0,2109 ± 0,158 | 0,2236 ± 0,166 | 0,755 ± 0,141 | 12,8 |
+| Simulated Annealing | 0,2121 ± 0,151 | 0,2261 ± 0,155 | 0,760 ± 0,119 | 16,2 |
 
 ### 11.3 Experimento 3 — Con LLM
 
 | Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | LLM Score ↑ | Runtime (ms) |
 |---|---|---|---|---|---|
-| Dynamic Programming | 0,1728 | **0,1945** | **0,797** | **4,56** | 32,7 |
-| Greedy (TextTiling) | **0,1288** | 0,2373 | 0,743 | 4,41 | **4,5** |
-| Simulated Annealing | 0,2299 | 0,2547 | 0,758 | 4,29 | 33,8 |
+| Dynamic Programming | 0,1728 | **0,1945** | **0,797** | **4,54** ± 0,36 | 25,6 |
+| Greedy (TextTiling) | **0,1288** | 0,2373 | 0,743 | 4,41 ± 0,53 | **3,6** |
+| Simulated Annealing | 0,2121 | 0,2261 | 0,760 | 4,42 ± 0,34 | 29,6 |
 
-(Las métricas estructurales de SA difieren ligeramente entre Exp. 1 y Exp. 3 a pesar de fijar la misma semilla. El generador `random.Random(seed)` se re-inicializa por documento en `_run_sa`, por lo que en teoría debería ser determinista entre corridas; la diferencia observada (~2 puntos porcentuales en Pk) probablemente proviene de ejecuciones independientes hechas en momentos distintos, no de la presencia del LLM. La magnitud es menor que la dispersión inter-documento y no altera el ordenamiento entre algoritmos.)
+Las métricas estructurales de SA son ahora **idénticas** entre Exp. 1 y Exp. 3, validando la reproducibilidad. (En una versión previa del runner los parámetros del YAML — incluido `random_seed` — no llegaban al constructor de SA, por lo que se usaban valores por defecto y `random.Random(None)` introducía no-determinismo. El bug se corrigió en el commit `1d33e45` y los resultados que aquí se reportan se obtuvieron con esa corrección aplicada.)
+
+**Uso del fallback LLM**: la unidad de llamada es **un segmento** (no un documento). Con 20 docs × 3 algoritmos × 5 segmentos predichos por doc-algoritmo, son **300 llamadas LLM** distribuidas en 60 pares doc-algoritmo. A nivel de llamada, Groq respondió correctamente en el **90,3 %** (≈ 271/300); el resto cayó al fallback de Mistral. A nivel doc-algoritmo, **6 pares (de 60)** activaron al menos una vez el fallback: 5 con tasa 100 % (los 5 segmentos a Mistral) y 1 con tasa 80 % (4 de 5 segmentos). **Cero llamadas** cayeron en el "score neutro = 3" — Mistral absorbió todos los fallos de Groq. Esto valida en datos reales el patrón de fallback descrito en §7.4.
 
 ### 11.4 Lectura por métrica
 
@@ -884,11 +903,11 @@ DP es el **mejor** (0,797). DP coloca fronteras más cerca de las posiciones exa
 
 #### LLM Score
 
-DP gana con **4,56/5**, seguido de Greedy (4,41) y SA (4,29). Los tres están por encima de 4 (rango muy alto), lo que indica que el LLM consideró las segmentaciones de todos los algoritmos como semánticamente coherentes. La jerarquía entre algoritmos coincide con la jerarquía en F1: **mejores fronteras objetivas → segmentos más coherentes según el LLM**, evidencia de que la calidad estructural y la calidad semántica están alineadas.
+DP gana con **4,54/5** (± 0,36), seguido de SA (4,42 ± 0,34) y Greedy (4,41 ± 0,53) prácticamente empatados. Los tres están por encima de 4,4 (rango alto), lo que indica que el LLM consideró las segmentaciones de todos los algoritmos como semánticamente coherentes. **DP mantiene la primera posición** en LLM score y en F1 — evidencia de que la calidad estructural y la calidad semántica están alineadas en cuanto a quién manda. Entre SA y Greedy el LLM no distingue (la diferencia 4,42 vs 4,41 es muy inferior a la desviación estándar de cualquiera de los dos), lo cual sugiere que en términos puramente semánticos las heurísticas son intercambiables para este dataset.
 
 #### Runtime
 
-Greedy es **~7× más rápido** que DP. En documentos cortos (los nuestros) las diferencias absolutas son despreciables (milisegundos), pero en documentos de cientos de oraciones la diferencia se vuelve significativa.
+Greedy es **~9× más rápido** que DP en el experimento puro sin LLM (1,2 ms vs 10,8 ms; ver §11.2). En el experimento con LLM el ratio cae a ~7× (3,6 ms vs 25,6 ms) porque ambos cargan el mismo overhead constante de la llamada al evaluador. En documentos cortos (los nuestros) las diferencias absolutas son despreciables (milisegundos), pero en documentos de cientos de oraciones la diferencia se vuelve significativa.
 
 ### 11.5 Resumen visual de quién gana en qué
 
@@ -899,7 +918,8 @@ Greedy es **~7× más rápido** que DP. En documentos cortos (los nuestros) las 
 | F1-Boundary | DP |
 | LLM Score | DP |
 | Runtime | Greedy |
-| Consistencia (menor desviación) | Greedy |
+| Consistencia en Pk y WD (menor desviación) | Greedy |
+| Consistencia en F1 (menor desviación) | SA |
 
 ---
 
@@ -921,9 +941,12 @@ Tres razones probables:
 
 ### 12.3 ¿Por qué los tres algoritmos predicen siempre 5 segmentos?
 
-Configuramos `max_segments = 5`. La función objetivo crece monótonamente con más segmentos (más segmentos = más oportunidad de cohesión alta dentro de cada uno), así que el óptimo siempre satura el límite. La referencia, en cambio, tiene 3,80 segmentos en promedio.
+Configuramos `max_segments = 5`. Dos factores se combinan:
 
-Esto es **sobresegmentación sistemática**. La sección 13 propone como mejora la **selección automática de $k$**.
+1. **Las implementaciones de BF y DP fijan $k = k_{\max}$**: BF enumera particiones de exactamente $k$ segmentos, y el backtracking actual de DP también termina seleccionando `best_k = k_max` (ver §4.1 matiz de implementación). SA arranca con una segmentación uniformemente espaciada de $k_{\max}$ segmentos y solo perturba posiciones, sin añadir ni quitar fronteras.
+2. **La función objetivo crece (débilmente) con más segmentos**: dividir un segmento largo en dos suele aumentar la cohesión total porque cada mitad concentra mejor su tópico, así que aunque la implementación permitiera elegir un $k$ menor, el óptimo seguiría tendiendo a $k_{\max}$.
+
+Resultado: los tres algoritmos predicen 5 segmentos en todos los documentos, mientras que la referencia tiene 3,80 segmentos en promedio. Esto es **sobresegmentación sistemática** y se traduce en una caída de F1 cuando la referencia tiene 3 segmentos. La sección 13 propone como mejora la **selección automática de $k$** (penalizando el número de segmentos en la función objetivo, o usando el `dp[n][j]` para distintos $j$ con un criterio tipo BIC/MDL).
 
 ### 12.4 ¿El LLM es confiable como evaluador?
 
@@ -931,7 +954,7 @@ Posibles fuentes de error:
 
 - **Sesgo del modelo**: Llama 3.3 puede tener sesgos en cómo califica español vs inglés, o ciertos temas vs otros.
 - **Inconsistencia**: temperatura 0 reduce variabilidad pero no la elimina por completo.
-- **Sin ground truth para la métrica**: no sabemos si "4,56" objetivamente significa "muy coherente" — es una opinión del modelo.
+- **Sin ground truth para la métrica**: no sabemos si "4,54" objetivamente significa "muy coherente" — es una opinión del modelo.
 
 A pesar de eso, el LLM score correlaciona bien con F1-Boundary (DP gana en ambas), lo cual es una **señal de validez convergente**: dos métricas independientes apuntan al mismo orden.
 
@@ -960,11 +983,11 @@ Nuestros documentos tienen vocabulario controlado y cambios de tema abruptos. Es
 ### 14.1 Hallazgos principales
 
 1. **DP es el mejor algoritmo general** en F1, WindowDiff y LLM Score. Es la elección por defecto recomendada.
-2. **Greedy es la opción práctica** cuando se prioriza velocidad y consistencia. Mejor Pk y 7× más rápido que DP.
+2. **Greedy es la opción práctica** cuando se prioriza velocidad y consistencia. Mejor Pk y ~9× más rápido que DP.
 3. **SA no es competitivo** con los parámetros actuales. Solo tendría sentido si el problema cambiara a una variante sin subestructura óptima.
 4. **BF y DP coinciden bit a bit** en 20/20 instancias del dataset `tiny`, validando empíricamente la correctitud de DP.
 5. **El LLM Score y las métricas estructurales coinciden en el ordenamiento**: ambas dan a DP el primer lugar. Esto refuerza la confiabilidad de ambas evaluaciones.
-6. **La función objetivo basada en TF-IDF es razonable pero limitada**: todos los algoritmos obtuvieron LLM scores ≥ 4,29/5, indicando coherencia semántica aceptable, pero hay margen claro de mejora con embeddings densos.
+6. **La función objetivo basada en TF-IDF es razonable pero limitada**: todos los algoritmos obtuvieron LLM scores ≥ 4,41/5, indicando coherencia semántica aceptable, pero hay margen claro de mejora con embeddings densos.
 
 ### 14.2 Lecciones generales
 
