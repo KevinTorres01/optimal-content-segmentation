@@ -640,7 +640,7 @@ Usar ambas fuentes permite contrastar comportamiento en condiciones ideales (sin
 ### 8.2 ¿Por qué estos datasets son válidos como benchmark del problema?
 
 1. Las fronteras son no ambiguas y conocidas: en el sintético, cada documento se construye concatenando bloques de oraciones de tópicos distintos (deportes, tecnología, ciencia, política, arte, economía, salud, historia). En Wikipedia, las secciones editadas por humanos cumplen el mismo rol: son cambios de tema explícitos. En ambos casos el ground truth tiene baja varianza inter-anotador esperada.
-2. Las longitudes son representativas y comparables entre ambos datasets: 14–35 oraciones por documento (sintético `small`, configurado para 12–40) frente a 16–39 (Wikipedia, tras truncación). Ambos reproducen el tamaño típico de una sección de artículo o entrada de blog corta. El dataset `tiny` (4–11 oraciones, configurado para 4–12) está calibrado específicamente para que Brute Force sea viable, habilitando la validación empírica de DP.
+2. Las longitudes son representativas y comparables entre ambos datasets: 15–36 oraciones por documento (sintético `small`, configurado para 12–40) frente a 17–40 (Wikipedia, tras truncación). Ambos reproducen el tamaño típico de una sección de artículo o entrada de blog corta. El dataset `tiny` (5–12 oraciones, configurado para 4–12) está calibrado específicamente para que Brute Force sea viable, habilitando la validación empírica de DP.
 3. `overlap_level=low` en el sintético es una elección deliberada: las plantillas comparten poco vocabulario entre tópicos, lo que favorece a TF-IDF. Esto significa que los resultados absolutos del sintético son una cota superior del rendimiento esperado en texto natural. El dataset Wikipedia mide exactamente esta diferencia: vocabulario natural compartido entre temas, transiciones graduales, frases largas con cláusulas subordinadas.
 4. El número de segmentos varía en el sintético: la distribución observada en `small` (3 segmentos en 8 docs, 4 en 8, 5 en 4) garantiza que los algoritmos no pueden "ganar" eligiendo siempre el mismo $k$ fijo. En Wikipedia la situación es distinta: tras la truncación a `max_segments_per_doc=5`, la distribución real es 5 segmentos en 24 docs y 3 segmentos en 1 doc, lo que significa que con `max_segments=5` el k predicho coincide con el k real en 24/25 instancias. Esto es una limitación del Experimento 4: las diferencias entre algoritmos en Wikipedia reflejan solo la calidad de las *posiciones* de las fronteras, no la elección del número de segmentos.
 5. Reproducibilidad: el sintético se regenera bit a bit con `random_seed=42`. El dataset Wikipedia es reproducible mientras los artículos referenciados existan; un `metadata.json` registra cada título descargado.
@@ -697,7 +697,7 @@ Estadísticas resultantes:
 
 #### Dataset `tiny` (sintético, validación BF vs DP)
 
-Documentos más cortos (4–11 oraciones observadas; configurado para 4–12) para que la fuerza bruta sea viable. Usado únicamente para validar empíricamente que DP coincide con BF.
+Documentos más cortos (5–12 oraciones observadas; configurado para 4–12) para que la fuerza bruta sea viable. Usado únicamente para validar empíricamente que DP coincide con BF.
 
 #### Dataset `wikipedia` (real, validación en texto natural)
 
@@ -709,12 +709,12 @@ Configuración (`config/datasets/wikipedia.yaml`): 28 títulos de artículos cub
 | Documentos aceptados | 25 |
 | Documentos descartados (429 persistente / filtros) | 3 |
 | Oraciones por documento (media) | 35,8 |
-| Oraciones por documento (rango) | 16 – 39 |
+| Oraciones por documento (rango) | 17 – 40 |
 | Segmentos por documento (media) | 4,92 |
 | Distribución de segmentos | 5 segmentos en 24 docs · 3 segmentos en 1 doc (concentrada en 5 por la truncación a `max_segments_per_doc=5`) |
 | Fuente | MediaWiki API, es.wikipedia.org |
 
-Las longitudes son comparables al sintético `small` (16–39 vs 14–35 oraciones), lo que hace que la comparación entre ambos sea directa: cualquier diferencia de rendimiento se atribuye a la naturaleza del texto, no a su tamaño.
+Las longitudes son comparables al sintético `small` (17–40 vs 15–36 oraciones), lo que hace que la comparación entre ambos sea directa: cualquier diferencia de rendimiento se atribuye a la naturaleza del texto, no a su tamaño.
 
 ### 8.5 Estructura en disco
 
@@ -818,13 +818,13 @@ ID: `exp_compare_algorithms`
 Pregunta: ¿Cuál de los tres algoritmos escalables (DP, Greedy, SA) da mejores fronteras?
 Dataset: `small` (20 documentos)
 LLM: ninguno (solo métricas estructurales)
-Por qué no incluimos Brute Force aquí: los documentos tienen 14–35 oraciones, por encima del límite de 15 de BF.
+Por qué no incluimos Brute Force aquí: los documentos tienen 15–36 oraciones, por encima del límite de 15 de BF.
 
 ### 10.2 Experimento 2 — Validación BF vs DP
 
 ID: `exp_bf_vs_dp`
 Pregunta: ¿DP encuentra realmente el óptimo global, igual que la fuerza bruta?
-Dataset: `tiny` (20 documentos con 4–11 oraciones)
+Dataset: `tiny` (20 documentos con 5–12 oraciones)
 LLM: ninguno
 `max_segments`: 3 (calibrado al rango real de segmentos en `tiny`, que tiene 2–3 segmentos por documento; ver `config/experiments/exp_bf_vs_dp.yaml`). El resto de experimentos usa `max_segments = 5`.
 Importancia: este es el experimento de validación de correctitud. Si DP no coincidiera con BF, sería evidencia de un bug en DP.
