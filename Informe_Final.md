@@ -1202,15 +1202,163 @@ python -m src.experiments.runner --config config/experiments/exp_llm_groq.yaml
 
 # Experimento 4: validación en texto natural (Wikipedia)
 python -m src.experiments.runner --config config/experiments/exp_wikipedia.yaml
+
+# Experimento 5: análisis de sensibilidad de hiperparámetros de SA
+# (grid 3×3×3 × 30 semillas × 20 docs = 16 200 corridas; ~10–15 min)
+# A diferencia de los anteriores, no usa YAML: el grid está definido en el script.
+python -m src.experiments.sa_sensitivity
 ```
 
-Cada uno genera tres archivos en `results/<experiment_id>/`:
+Los experimentos 1–4 generan tres archivos en `results/<experiment_id>/`:
 
 - `results.json` — resultado por documento, con cada métrica
 - `summary.csv` — promedios agregados por algoritmo
 - `run_metadata.json` — configuración usada, fecha, semilla
 
-### 15.7 Interpretar los resultados
+### 15.7 Probar los algoritmos sobre un texto propio (modo demo interactivo)
+
+Para usuarios que quieran experimentar con los algoritmos sobre un texto cualquiera —sin necesidad de generar un dataset con fronteras de verdad— el proyecto incluye un CLI de demostración en `src/demo.py`. Tiene **dos modos**: interactivo (guiado por menús, recomendado para usuarios nuevos) y no interactivo (controlado por flags, útil para automatización).
+
+#### Modo interactivo (recomendado)
+
+Basta con ejecutar el módulo sin argumentos:
+
+```bash
+source .venv/bin/activate
+python -m src.demo
+```
+
+El programa muestra un banner de bienvenida identificándose como **"Aplicación de Segmentación Óptima de Textos"** y pasa a guiar al usuario por tres decisiones:
+
+1. **El texto a segmentar** — el usuario lo escribe o lo pega directamente en la terminal y termina con `Ctrl+D` (Linux/macOS) o `Ctrl+Z + Enter` (Windows). Atajos opcionales: escribir `:ejemplo` carga un texto de demostración; `:archivo <ruta>` lee un fichero.
+2. **¿Qué algoritmo?** — menú numerado con los cuatro algoritmos y una descripción corta de cada uno. Por defecto: Programación Dinámica.
+3. **¿Cuántos segmentos (k)?** — por defecto **auto** (el programa elige k automáticamente con el método del codo descrito abajo). El usuario puede sobreescribir introduciendo un entero entre 1 y `n`.
+
+Si el algoritmo elegido tiene hiperparámetros relevantes (`window_size` para greedy; `n_iterations` y `random_seed` para simulated annealing) se preguntan con valores por defecto razonables; los algoritmos exactos (BF, DP) no piden nada extra.
+
+#### Selección automática de `k` (método del codo)
+
+La función objetivo $J(k) = \sum_i |S_i|\,\overline{\cos}(S_i)$ crece monótonamente con `k` (en el extremo, `k = n` da cohesión trivialmente perfecta). Por eso no se puede elegir `k` simplemente maximizando $J$. El demo aplica la **heurística del codo (Kneedle, Satopaa et al. 2011)** sobre la curva del objetivo óptimo de la DP:
+
+1. Para cada `k ∈ [2, k_max]` con `k_max = min(n − 1, max(5, n/2))`, se corre DP exacto y se calcula $J(k)$.
+2. Se normalizan los ejes a $[0, 1]$: $\tilde{x}_k = (k - k_\min) / (k_\max - k_\min)$, $\tilde{y}_k = (J(k) - J_\min) / (J_\max - J_\min)$.
+3. Se elige el `k` que maximiza $\tilde{y}_k - \tilde{x}_k$ — el punto de máxima distancia vertical entre la curva (cóncava) y la diagonal que une sus extremos.
+
+Intuitivamente: busca el punto donde añadir un segmento más deja de aportar ganancia significativa de cohesión. Sobre el texto de ejemplo (gatos / economía / Python, 9 oraciones), el auto-k elige **k = 3**, que es exactamente el número de temas reales. La curva mostrada en terminal es:
+
+```text
+k=2  J=0.0396
+k=3  J=0.0500  ← elegido
+k=4  J=0.0500
+k=5  J=0.0500
+```
+
+La implementación vive en [`src/algorithms/auto_k.py`](src/algorithms/auto_k.py), es reutilizable desde el runner experimental y siempre usa DP internamente para barrer la curva (porque DP es exacto y eficiente; los demás algoritmos usan el `k` ya elegido).
+
+Tras mostrar el resultado, ofrece un menú para **probar otro algoritmo sobre el mismo texto**, **cambiar k**, **cargar otro texto** o **salir**. Así se puede comparar visualmente cómo difieren los cuatro algoritmos sobre un mismo párrafo sin reescribir comandos.
+
+#### Sesión de ejemplo
+
+Pantalla inicial al ejecutar `python -m src.demo`:
+
+```text
+╭───────── ✦ Optimal Content Segmentation ✦ ─────────╮
+│                                                    │
+│  Aplicación de Segmentación Óptima de Textos       │
+│                                                    │
+│  Divide un texto en segmentos semánticamente       │
+│  coherentes usando uno de los 4 algoritmos del     │
+│  proyecto (fuerza bruta, programación dinámica,    │
+│  greedy o recocido simulado).                      │
+│                                                    │
+│  Modo demo: sin métricas, sin LLM — inspección     │
+│  cualitativa.                                      │
+│                                                    │
+╰────────────────────────────────────────────────────╯
+
+Escribe o pega el texto que quieres segmentar.
+Cuando termines, pulsa Ctrl+D (Linux/macOS) o Ctrl+Z + Enter (Windows).
+Atajos: escribe :ejemplo para usar un texto de demostración, o
+        :archivo <ruta> para leer un fichero.
+
+> El gato duerme en el sofá. Los felinos suelen descansar muchas horas
+  al día. Un gato adulto puede dormir hasta 16 horas. Por otro lado,
+  la economía cubana enfrenta retos importantes. La inflación afecta
+  el poder adquisitivo. El gobierno busca nuevas medidas. En cuanto a
+  la programación, Python es muy popular. Los desarrolladores valoran
+  su sintaxis clara. Existen muchas bibliotecas para ciencia de datos.
+  ^D
+
+✓ Detectadas 9 oraciones.
+
+¿Qué algoritmo quieres usar?
+  1) Fuerza bruta          (brute_force) — Exacto. Solo práctico hasta 15 oraciones.
+  2) Programación dinámica (dynamic_programming) — Exacto y eficiente. Recomendado.
+  3) Greedy (TextTiling)   (greedy) — Heurística rápida basada en valles de similitud.
+  4) Recocido simulado     (simulated_annealing) — Metaheurística estocástica.
+Elige [1/2/3/4] (2): 2
+¿Cuántos segmentos quieres? (k) (5): 3
+
+Calculando…
+
+Algoritmo:  dynamic_programming
+Oraciones:  9
+Segmentos:  3
+Fronteras:  [0, 3, 7]
+Tiempo:     0.0082 s
+
+╭─ Segmento 1  (oraciones 0–2) ──────────────────────────────────────╮
+│   [0] El gato duerme en el sofá.                                   │
+│   [1] Los felinos suelen descansar muchas horas al día.            │
+│   [2] Un gato adulto puede dormir hasta 16 horas.                  │
+╰────────────────────────────────────────────────────────────────────╯
+╭─ Segmento 2  (oraciones 3–6) ──────────────────────────────────────╮
+│   [3] Por otro lado, la economía cubana enfrenta retos importantes.│
+│   [4] La inflación afecta el poder adquisitivo.                    │
+│   [5] El gobierno busca nuevas medidas.                            │
+│   [6] En cuanto a la programación, Python es muy popular.          │
+╰────────────────────────────────────────────────────────────────────╯
+╭─ Segmento 3  (oraciones 7–8) ──────────────────────────────────────╮
+│   [7] Los desarrolladores valoran su sintaxis clara.               │
+│   [8] Existen muchas bibliotecas para ciencia de datos.            │
+╰────────────────────────────────────────────────────────────────────╯
+
+¿Qué quieres hacer ahora?
+  1) Probar otro algoritmo sobre el mismo texto
+  2) Cambiar el número de segmentos (k)
+  3) Cargar otro texto
+  4) Salir
+Elige [1/2/3/4] (4): 1
+```
+
+Si en este punto el usuario elige greedy con `window_size=2`, obtiene fronteras `[0, 3, 4]` sobre el mismo texto — ilustrando en vivo la diferencia entre un algoritmo exacto (DP) y una heurística que decide localmente.
+
+Lectura del resultado: las fronteras `[0, 3, 7]` significan que el segmento 1 va de la oración 0 a la 2, el segmento 2 de la 3 a la 6, y el segmento 3 de la 7 a la 8. DP separó correctamente el bloque de gatos del resto. La oración 6 ("En cuanto a la programación...") quedó agrupada con el bloque de economía: es un caso límite esperable porque DP prefiere fronteras que maximicen la cohesión global, no la local.
+
+#### Modo no interactivo (flags)
+
+Si se pasa cualquier flag (`--text`, `--file`, `--algorithm`) o se canaliza texto por stdin, el CLI ejecuta una sola corrida sin menús, útil para scripts:
+
+```bash
+# Desde un archivo, usando DP con 4 segmentos
+python -m src.demo --file mi_texto.txt --algorithm dynamic_programming -k 4
+
+# Desde stdin
+cat mi_texto.txt | python -m src.demo --algorithm greedy -k 3 --param window_size=3
+```
+
+Argumentos disponibles:
+
+- `-a`, `--algorithm` — `brute_force` | `dynamic_programming` | `greedy` | `simulated_annealing`.
+- `-k`, `--max-segments` — máximo de segmentos (por defecto `min(5, n_oraciones)`).
+- `--param key=value` — argumento extra del constructor del algoritmo; se puede repetir. Ejemplo: `--param window_size=3`, `--param random_seed=42`.
+- `--text` / `--file` — texto inline o ruta a archivo UTF-8.
+
+A diferencia de los experimentos del runner, **el modo demo no calcula métricas** (no hay fronteras de verdad contra las cuales comparar) y **no invoca al LLM**: es una herramienta de inspección cualitativa rápida.
+
+Para ver todas las opciones: `python -m src.demo --help`.
+
+### 15.8 Interpretar los resultados
 
 Abre `results/exp_compare_algorithms/summary.csv` con cualquier editor o LibreOffice. Cada fila es un algoritmo. Recuerda:
 
@@ -1218,7 +1366,7 @@ Abre `results/exp_compare_algorithms/summary.csv` con cualquier editor o LibreOf
 - `f1_boundary`, `llm_score` → más alto es mejor.
 - `runtime_seconds` → más bajo es mejor.
 
-### 15.8 Ejecutar tests automáticos
+### 15.9 Ejecutar tests automáticos
 
 ```bash
 # Todos los tests (no requieren API keys, usan mocks)
@@ -1231,7 +1379,7 @@ python -m pytest tests/unit/ -v
 python -m pytest tests/ --cov=src --cov-report=term-missing
 ```
 
-### 15.9 Añadir un nuevo algoritmo
+### 15.10 Añadir un nuevo algoritmo
 
 1. Crear `src/algorithms/mi_algoritmo.py` extendiendo `BaseSegmenter`.
 2. Registrarlo en `src/algorithms/__init__.py` agregando a `ALGORITHM_REGISTRY`.
@@ -1244,7 +1392,7 @@ algorithms:
       max_segments: 5
 ```
 
-### 15.10 Añadir un nuevo proveedor LLM
+### 15.11 Añadir un nuevo proveedor LLM
 
 1. Crear `src/llm/mi_proveedor.py` extendiendo `BaseLLMEvaluator`.
 2. Registrarlo en la factory `src/llm/factory.py`.
