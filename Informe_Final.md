@@ -28,6 +28,7 @@ Versión: Documento de entrega.
 14. [Conclusiones](#14-conclusiones)
 15. [Manual de uso paso a paso](#15-manual-de-uso-paso-a-paso)
 16. [Glosario](#16-glosario)
+17. [Referencias](#17-referencias)
 
 ---
 
@@ -1050,6 +1051,9 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 | Baja | Wikipedia limitado a 28 títulos | Ampliar a categorías completas (e.g. todo "Ciencia") vía API de categorías | Mayor tamaño muestral |
 | Baja | BF limitado a $n \leq 15$ | (Inherente al algoritmo; ya cumple su rol) | — |
 | Baja | LLM evalúa segmento por segmento | Evaluar pares de segmentos (cohesión inter-segmento) | Mayor riqueza diagnóstica |
+| Baja | Segmentación de oraciones basada en regex (`(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])`) | Reemplazar por un *sentence splitter* entrenado (p. ej. spaCy `es_core_news_sm`) para manejar abreviaturas | Reduce ruido a nivel oración en Wikipedia |
+
+> **Nota sobre el sentence splitter.** El carácter `.` es ambiguo: aparece tanto en abreviaturas (`Sr.`, `Dr.`, `Lic.`, `EE. UU.`) como en finales de oración. El regex usado en [src/dataset/wikipedia_loader.py:27](src/dataset/wikipedia_loader.py#L27) evita romper cuando la abreviatura va seguida de minúscula (`"5 m. de altura"`) pero **sobre-segmenta** cuando viene seguida de mayúscula (`"el Sr. Pérez fue presidente"` se parte tras `Sr.`). El filtro `min_sentence_chars` descarta los fragmentos más cortos y el uso de abreviaturas en Wikipedia en español es relativamente bajo, así que el efecto es secundario frente al impacto de TF-IDF sobre vocabulario natural; aun así, constituye una fuente menor de ruido a nivel oración que contribuye al gap entre el corpus sintético y Wikipedia reportado en §11.
 
 ---
 
@@ -1291,6 +1295,31 @@ llm_evaluator:
 - Throttle: limitar la velocidad de envío de peticiones para no exceder rate limits.
 - Trade-off: compromiso entre dos cosas que no se pueden maximizar simultáneamente (e.g., velocidad vs precisión).
 - WindowDiff: variante más estricta de Pk que considera la cantidad de fronteras en cada ventana.
+
+---
+
+## 17. Referencias
+
+### Procesamiento de lenguaje natural
+
+- Jurafsky, D., & Martin, J. H. *Speech and Language Processing: An Introduction to Natural Language Processing, Computational Linguistics, and Speech Recognition* (3.ª ed., borrador). Referencia general para los fundamentos de PLN: representación TF-IDF, tokenización, segmentación de oraciones, normalización y modelos de lenguaje formales y probabilísticos.
+
+### Segmentación de texto
+
+- Hearst, M. A. (1997). *TextTiling: Segmenting Text into Multi-paragraph Subtopic Passages*. Computational Linguistics, 23(1), 33–64. Base del algoritmo Greedy: detección de fronteras como valles de similitud entre bloques adyacentes.
+- Beeferman, D., Berger, A., & Lafferty, J. (1999). *Statistical Models for Text Segmentation*. Machine Learning, 34(1–3), 177–210. Define la métrica Pk usada en §9.
+- Pevzner, L., & Hearst, M. A. (2002). *A Critique and Improvement of an Evaluation Metric for Text Segmentation*. Computational Linguistics, 28(1), 19–36. Introduce WindowDiff como variante más estricta de Pk.
+
+### Optimización combinatoria
+
+- Kirkpatrick, S., Gelatt, C. D., & Vecchi, M. P. (1983). *Optimization by Simulated Annealing*. Science, 220(4598), 671–680. Base teórica del algoritmo implementado en [src/algorithms/simulated_annealing.py](src/algorithms/simulated_annealing.py).
+- Bellman, R. (1957). *Dynamic Programming*. Princeton University Press. Origen del paradigma usado en [src/algorithms/dynamic_programming.py](src/algorithms/dynamic_programming.py).
+
+### Recursos de implementación
+
+- Pedregosa, F. *et al.* (2011). *Scikit-learn: Machine Learning in Python*. JMLR, 12, 2825–2830. Provee `TfidfVectorizer`, usado en [src/algorithms/_cohesion.py](src/algorithms/_cohesion.py).
+- API pública de Wikipedia (`https://en.wikipedia.org/w/api.php`), usada por [src/dataset/wikipedia_loader.py](src/dataset/wikipedia_loader.py).
+- Documentación de Groq (`https://console.groq.com/docs`) y Mistral (`https://docs.mistral.ai`) para la integración LLM descrita en §7.
 
 ---
 
