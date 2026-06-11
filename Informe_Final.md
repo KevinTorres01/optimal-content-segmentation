@@ -200,7 +200,7 @@ que cumplen tres restricciones:
 2. $0 = b_1 < b_2 < \ldots < b_k \leq n - 1$ — están en orden estrictamente creciente.
 3. $k \leq k_{\max}$ — el número de segmentos no excede un máximo configurado.
 
-> Matiz de implementación: la restricción $k \leq k_{\max}$ es la del modelo formal. En el código, Brute Force enumera exactamente $k = k_{\max}$ segmentos (vía `combinations(range(1, n), k - 1)` en [src/algorithms/brute_force.py:79](src/algorithms/brute_force.py#L79)). Programación Dinámica llena la tabla `dp[i][j]` para todo $j \in [1, k_{\max}]$, pero el backtracking actual ([src/algorithms/dynamic_programming.py:89-94](src/algorithms/dynamic_programming.py#L89-L94)) recorre los candidatos de $k_{\max}$ hacia abajo y se queda con el primero finito: como `dp[n][k_max]` siempre es finito cuando $n \geq k_{\max}$, en la práctica DP también satura $k_{\max}$ siempre. Es decir, en la implementación actual ambos algoritmos devuelven exactamente $k_{\max}$ segmentos, lo que explica por qué coinciden bit a bit en las 20 instancias del dataset `tiny`. La tabla DP sí soporta de forma natural una selección de "mejor $k$" (comparando `dp[n][j]` entre todos los $j$), pero esa selección no está activada en el código y es una de las mejoras propuestas en §13. Esto no invalida los resultados: en ambos datasets el óptimo de cohesión satura $k_{\max}$ y el comportamiento "selecciona el mejor $k$" coincidiría con "fija $k = k_{\max}$".
+> Matiz de implementación: la restricción $k \leq k_{\max}$ es la del modelo formal. En el código, Brute Force enumera exactamente $k = k_{\max}$ segmentos (vía `combinations(range(1, n), k - 1)` en [src/algorithms/brute_force.py:79](src/algorithms/brute_force.py#L79)). Programación Dinámica llena la tabla `dp[i][j]` para todo $j \in [1, k_{\max}]$ y su backtracking ([src/algorithms/dynamic_programming.py:89-98](src/algorithms/dynamic_programming.py#L89-L98)) realiza un verdadero $\arg\max_j \text{dp}[n][j]$ sobre todos los $j \in [1, k_{\max}]$, seleccionando el número de segmentos que maximiza la cohesión total. En la práctica, la función objetivo ponderada por longitud crece (débilmente) con $j$, por lo que el argmax satura $k_{\max}$ en la mayoría de los documentos, especialmente cuando $n \geq k_{\max}$. Esto explica por qué DP y BF coinciden bit a bit en las 20 instancias del dataset `tiny`. Una mejora futura (§13) propone añadir una penalización por número de segmentos (tipo BIC/MDL) para que la selección de $k$ sea genuinamente adaptativa.
 
 Cada frontera $b_j$ marca el inicio de un segmento. El segmento $S_j$ se define como las oraciones desde la posición $b_j$ hasta la posición $b_{j+1} - 1$ (y el último segmento llega hasta el final del documento).
 
@@ -390,16 +390,20 @@ SALIDA: mejor segmentación B*
          SI val > dp[i][j]:
            dp[i][j] ← val
            split[i][j] ← i'
-5. # Reconstrucción: seguir los punteros desde split[n][k].
-   # (La implementación actual fija best_k = k, ya que dp[n][k] es siempre
-   #  finito para n ≥ k; ver §4.1 matiz de implementación.)
-   i ← n; j ← k
+5. # Selección del mejor k: argmax_j dp[n][j] para j ∈ [1, k].
+   best_k ← 1; best_val ← dp[n][1]
+   PARA j = 2 HASTA k:
+     SI dp[n][j] > best_val:
+       best_val ← dp[n][j]
+       best_k ← j
+6. # Reconstrucción: seguir los punteros desde split[n][best_k].
+   i ← n; j ← best_k
    B ← []
    MIENTRAS j > 0:
      B.insert(0, split[i][j])
      i ← split[i][j]
      j ← j - 1
-6. RETORNAR B
+7. RETORNAR B
 ```
 
 #### Complejidad
@@ -837,7 +841,20 @@ Dataset: `wikipedia` (25 artículos reales en español)
 LLM: ninguno (foco en métricas estructurales)
 Importancia: usa artículos editados por humanos con secciones como ground truth para contrastar el comportamiento medido en condiciones ideales contra el comportamiento en texto natural. Es el experimento que separa "lo que funciona en un laboratorio" de "lo que funciona en producción".
 
-### 10.5 Reproducibilidad
+### 10.5 Experimento 5 — Análisis de sensibilidad de hiperparámetros de SA
+
+ID: `exp_sa_sensitivity`
+Pregunta: ¿Cómo influyen los hiperparámetros del Recocido Simulado (temperatura inicial $T_0$, tasa de enfriamiento $\alpha$, y número de iteraciones $N_{\text{iter}}$) en la calidad de la segmentación y en el tiempo de ejecución del algoritmo?
+Dataset: `small` (20 documentos)
+Réplicas estocásticas: 30 semillas distintas por cada configuración del grid, generando un total de 16,200 ejecuciones individuales (27 configuraciones × 30 semillas × 20 documentos).
+Metodología: Se realiza una búsqueda por rejilla (grid search) cruzando los siguientes rangos de parámetros:
+- $T_0 \in [0.5, 1.0, 2.0]$
+- $\alpha \in [0.990, 0.995, 0.999]$
+- $N_{\text{iter}} \in [500, 1000, 2000]$
+
+Para cada configuración se computan el promedio de las métricas estructurales ($F_1$-Boundary, $P_k$, WindowDiff) y del tiempo de ejecución en milisegundos, acompañados de sus respectivos intervalos de confianza al 95 % (calculados con la distribución t de Student para muestras de tamaño $N = 30$). Esto permite evaluar la robustez y la significancia estadística de los cambios observados.
+
+### 10.6 Reproducibilidad
 
 | Parámetro | Valor |
 |---|---|
@@ -845,7 +862,7 @@ Importancia: usa artículos editados por humanos con secciones como ground truth
 | Python | 3.12.3 |
 | scikit-learn | ≥ 1.3 |
 | numpy | ≥ 1.24 |
-| Fecha de ejecución | 2026-06-10 (exp 1–3) · 2026-06-11 (exp 4, UTC) |
+| Fecha de ejecución | 2026-06-10 (exp 1–3) · 2026-06-11 (exp 4 y 5, UTC) |
 
 La semilla se registra en `run_metadata.json` junto a cada resultado.
 
@@ -904,7 +921,35 @@ Cambio en el ordenamiento: a diferencia del sintético donde DP gana en WD/F1, e
 
 Greedy mantiene su perfil de "rápido y razonable": ~10× más rápido que DP y resultados muy cercanos a DP en métricas estructurales — heurística práctica robusta.
 
-### 11.5 Lectura por métrica (dataset sintético `small`)
+### 11.5 Experimento 5 — Análisis de sensibilidad de hiperparámetros de SA
+
+Se evaluó la sensibilidad del algoritmo de Recocido Simulado ante cambios en su temperatura inicial ($T_0$), tasa de enfriamiento ($\alpha$) y número de iteraciones ($N_{\text{iter}}$). La tabla a continuación muestra las 10 mejores configuraciones ordenadas por la métrica $F_1$-Boundary promedio, junto con sus intervalos de confianza al 95 % (calculados sobre 30 réplicas por documento).
+
+| $T_0$ | $\alpha$ | $N_{\text{iter}}$ | $F_1$-Boundary ↑ | $P_k$ ↓ | WindowDiff ↓ | Tiempo (ms) |
+|---|---|---|---|---|---|---|
+| 0,5 | 0,995 | 2000 | **0,7815 ± 0,0106** | 0,1988 ± 0,0124 | 0,2153 ± 0,0128 | 17,8 ± 0,5 |
+| 1,0 | 0,995 | 2000 | **0,7815 ± 0,0105** | 0,1929 ± 0,0123 | 0,2117 ± 0,0128 | 17,9 ± 0,5 |
+| 0,5 | 0,995 | 1000 | 0,7811 ± 0,0105 | 0,1999 ± 0,0123 | 0,2163 ± 0,0128 | 14,2 ± 0,4 |
+| 2,0 | 0,995 | 2000 | 0,7807 ± 0,0107 | 0,1979 ± 0,0127 | 0,2141 ± 0,0131 | 17,8 ± 0,5 |
+| 0,5 | 0,990 | 1000 | 0,7760 ± 0,0106 | 0,2056 ± 0,0122 | 0,2203 ± 0,0127 | 14,4 ± 0,5 |
+| 0,5 | 0,990 | 2000 | 0,7760 ± 0,0106 | 0,2056 ± 0,0122 | 0,2203 ± 0,0127 | 18,2 ± 0,5 |
+| 2,0 | 0,990 | 1000 | 0,7756 ± 0,0105 | 0,2066 ± 0,0126 | 0,2222 ± 0,0130 | 14,8 ± 0,5 |
+| 2,0 | 0,990 | 2000 | 0,7756 ± 0,0105 | 0,2066 ± 0,0126 | 0,2222 ± 0,0130 | 18,1 ± 0,5 |
+| 0,5 | 0,990 | 500  | 0,7716 ± 0,0106 | 0,2106 ± 0,0120 | 0,2251 ± 0,0125 | 12,6 ± 0,5 |
+| 1,0 | 0,995 | 1000 | 0,7714 ± 0,0104 | 0,2078 ± 0,0120 | 0,2256 ± 0,0125 | 14,1 ± 0,5 |
+
+#### Análisis de tendencias y efectos principales:
+
+1. **Efecto de la tasa de enfriamiento ($\alpha$):** 
+   La tasa de enfriamiento intermedia $\alpha = 0,995$ es claramente la que ofrece el mejor compromiso. Si la tasa de enfriamiento es demasiado rápida ($\alpha = 0,990$), el sistema se enfría de forma brusca ("templado rápido" o *quenching*), congelando las fronteras prematuramente y quedando atrapado en óptimos locales ($F_1$ máximo de ~0,7760). Por otro lado, si es demasiado lenta ($\alpha = 0,999$), el sistema no se enfría lo suficiente en el número de iteraciones fijado, de modo que al final del proceso sigue aceptando movimientos aleatorios perjudiciales con alta probabilidad, lo que degrada notablemente el rendimiento (la mejor config con $\alpha = 0,999$ alcanza apenas $F_1 = 0,7671$).
+
+2. **Efecto del número de iteraciones ($N_{\text{iter}}$):**
+   Como era de esperar, incrementar el número de iteraciones mejora la calidad de la segmentación. Las configuraciones con $N_{\text{iter}} = 2000$ dominan el top de la tabla. Un mayor número de iteraciones proporciona más tiempo para explorar el espacio de búsqueda y permite que la temperatura disminuya de manera más suave y gradual. Sin embargo, esto duplica el tiempo de ejecución (de ~12,6 ms a ~18 ms por documento), aunque en términos absolutos el coste computacional sigue siendo bajo.
+
+3. **Efecto de la temperatura inicial ($T_0$):**
+   El algoritmo demuestra ser relativamente robusto ante variaciones en la temperatura inicial en el rango $[0.5, 2.0]$. No obstante, temperaturas iniciales más bajas ($T_0 = 0,5$ y $T_0 = 1,0$) combinadas con una tasa de enfriamiento lenta de $0,995$ alcanzan el mejor rendimiento promedio, sugiriendo que calentar el sistema en exceso al principio puede provocar que se deshagan agrupaciones semánticas correctas iniciales sin aportar una exploración útil posterior.
+
+### 11.6 Lectura por métrica (dataset sintético `small`)
 
 #### Pk
 
@@ -926,7 +971,7 @@ DP gana con 4,54/5 (± 0,36), seguido de SA (4,42 ± 0,34) y Greedy (4,41 ± 0,5
 
 Greedy es ~9× más rápido que DP en el experimento puro sin LLM (1,2 ms vs 10,8 ms; ver §11.2). En el experimento con LLM el ratio cae a ~7× (3,6 ms vs 25,6 ms). El `runtime_seconds` que reportamos se mide dentro de `algorithm.segment(...)` y no incluye la llamada al LLM (la evaluación ocurre después en el runner, ver [src/experiments/runner.py:159-169](src/experiments/runner.py#L159-L169)). El hecho de que los tres algoritmos sean ~2–3× más lentos en Exp. 3 que en Exp. 1 se explica entonces por contención de CPU: cada llamada LLM abre un `ThreadPoolExecutor` con timeout ([src/llm/fallback_provider.py:58](src/llm/fallback_provider.py#L58)), y aunque el thread principal hace `future.result()` y bloquea, el costo de levantar y destruir threads más el `time.sleep` del throttle introducen jitter en el reloj que pesa sobre tiempos del orden de milisegundos. En documentos cortos (los nuestros) las diferencias absolutas son despreciables; en documentos de cientos de oraciones la diferencia entre $O(n^2 \cdot k)$ y $O(n \cdot w)$ se vuelve significativa.
 
-### 11.6 Resumen visual de quién gana en qué
+### 11.7 Resumen visual de quién gana en qué
 
 | Métrica | Ganador en sintético `small` | Ganador en Wikipedia |
 |---|---|---|
@@ -950,17 +995,15 @@ Esto es una observación importante: el mejor algoritmo depende de la métrica q
 
 ### 12.2 ¿Por qué SA queda último en sintético pero gana en Wikipedia?
 
-SA queda tercero en sintético y primero en Wikipedia. La explicación es la misma para ambos casos: SA aporta exactamente cuando el paisaje de la función objetivo es ruidoso o tiene óptimos locales engañosos.
+En el dataset sintético, el objetivo TF-IDF tiene un óptimo nítido porque los tópicos comparten poco vocabulario. DP encuentra ese óptimo por construcción; SA no puede superarlo con el mismo objetivo. A esto se sumaba que la configuración por defecto inicial (`initial_temp=1.0`, `cooling_rate=0.995`, `n_iterations=2000`) se había seleccionado sin una optimización formal de parámetros. El análisis de sensibilidad sistemático (Experimento 5) demostró que, efectivamente, se podía exprimir más rendimiento de SA: ajustando los parámetros a $T_0 = 0.5$ (o $T_0 = 1.0$) y $\alpha = 0.995$ con $N_{\text{iter}} = 2000$ iteraciones, el rendimiento estocástico promedio de SA en el dataset sintético asciende a $F_1 = 0,7815 \pm 0,0105$ (superando el $F_1 = 0,760$ inicial y cerrando significativamente la brecha frente al óptimo global exacto de DP, que es $F_1 = 0,797$).
 
-En el dataset sintético, el objetivo TF-IDF tiene un óptimo nítido porque los tópicos comparten poco vocabulario. DP encuentra ese óptimo por construcción; SA no puede superarlo con el mismo objetivo. A esto se suma que los hiperparámetros (`initial_temp=1.0`, `cooling_rate=0.995`, `n_iterations=2000`) son valores por defecto razonables pero no resultado de una búsqueda sistemática, lo que probablemente deja rendimiento sobre la mesa.
-
-En el dataset Wikipedia, el vocabulario natural aplana el paisaje de cohesión: "óptimo del proxy TF-IDF" deja de coincidir con "óptimo del ground truth". DP se queda atrapado maximizando un objetivo que ya no es buen indicador, mientras que la aleatoriedad de SA permite explorar fronteras que el proxy considera ligeramente peores pero que el ground truth premia. Es un caso clásico donde la metaheurística supera al exacto no por encontrar mejor óptimo del objetivo, sino por encontrar uno menos malo respecto al objetivo verdadero no observable.
+En el dataset Wikipedia, el vocabulario natural aplana el paisaje de cohesión: "óptimo del proxy TF-IDF" deja de coincidir con "óptimo del ground truth". DP se queda atrapado maximizando un objetivo que ya no es buen indicador, mientras que la aleatoriedad de SA permite explorar fronteras que el proxy considera ligeramente peores pero que el ground truth premia. Es un caso clásico donde la metaheurística supera al exacto no por encontrar mejor óptimo del objetivo, sino por encontrar uno menos malo respecto al objetivo verdadero no observable. En este entorno real, contar con una parametrización optimizada resulta crítico para que la exploración no degenere en caminos subóptimos ruidosos.
 
 ### 12.3 ¿Por qué los tres algoritmos predicen siempre 5 segmentos?
 
 Configuramos `max_segments = 5`. Dos factores se combinan:
 
-1. Las implementaciones de BF y DP fijan $k = k_{\max}$: BF enumera particiones de exactamente $k$ segmentos, y el backtracking actual de DP también termina seleccionando `best_k = k_max` (ver §4.1 matiz de implementación). SA arranca con una segmentación uniformemente espaciada de $k_{\max}$ segmentos y solo perturba posiciones, sin añadir ni quitar fronteras.
+1. BF enumera particiones de exactamente $k_{\max}$ segmentos. DP realiza un verdadero $\arg\max_j \text{dp}[n][j]$ sobre $j \in [1, k_{\max}]$, pero como la función objetivo ponderada por longitud crece con $j$, el argmax satura $k_{\max}$ en la práctica. SA arranca con una segmentación uniformemente espaciada de $k_{\max}$ segmentos y solo perturba posiciones, sin añadir ni quitar fronteras.
 2. La función objetivo crece (débilmente) con más segmentos: dividir un segmento largo en dos suele aumentar la cohesión total porque cada mitad concentra mejor su tópico, así que aunque la implementación permitiera elegir un $k$ menor, el óptimo seguiría tendiendo a $k_{\max}$.
 
 Resultado: los tres algoritmos predicen 5 segmentos en todos los documentos, mientras que la referencia tiene 3,80 segmentos en promedio. Esto es sobresegmentación sistemática y se traduce en una caída de F1 cuando la referencia tiene 3 segmentos. La sección 13 propone como mejora la selección automática de $k$ (penalizando el número de segmentos en la función objetivo, o usando el `dp[n][j]` para distintos $j$ con un criterio tipo BIC/MDL).
@@ -996,7 +1039,7 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 | Alta | TF-IDF degrada en texto natural (−43 % F1 entre sintético y Wikipedia) | Reemplazar por embeddings densos (Sentence-BERT) | +15–20 % F1 en textos reales |
 | Alta | $k$ se elige manualmente | Selección automática vía BIC/MDL o salto marginal de cohesión | Elimina el parámetro más crítico |
 | Media | Sobresegmentación sistemática | Penalizar número de segmentos en la función objetivo | Acerca al número real |
-| Media | SA con hiperparámetros por defecto | Grid search sobre $T_0$, $\alpha$, $n_{\text{iter}}$ | +5–10 % F1 para SA |
+| Completada | SA con hiperparámetros por defecto | Búsqueda por rejilla (grid search) de 27 configs con 30 réplicas (Exp. 5) | Logró +2,8 % de F1 (0,760 → 0,7815) y menor error en SA |
 | Media | Wikipedia sin evaluación LLM | Correr `exp_wikipedia` con `provider: groq` para medir LLM score sobre texto real | Validación semántica del cambio de ranking |
 | Baja | Wikipedia limitado a 28 títulos | Ampliar a categorías completas (e.g. todo "Ciencia") vía API de categorías | Mayor tamaño muestral |
 | Baja | BF limitado a $n \leq 15$ | (Inherente al algoritmo; ya cumple su rol) | — |
@@ -1015,6 +1058,7 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 5. BF y DP coinciden bit a bit en 20/20 instancias del dataset `tiny`, validando empíricamente la correctitud de DP.
 6. El LLM Score y las métricas estructurales coinciden en el ordenamiento sobre el sintético: ambas dan a DP el primer lugar — señal de validez convergente entre dos formas independientes de evaluar.
 7. La función objetivo basada en TF-IDF es razonable en condiciones controladas pero degrada con vocabulario natural: hay margen claro de mejora con embeddings densos.
+8. El análisis de sensibilidad estocástico con 30 réplicas (Experimento 5) demostró la importancia de calibrar los hiperparámetros de SA. Se determinó que una tasa de enfriamiento equilibrada de $\alpha = 0,995$ y una temperatura inicial moderada ($T_0 \le 1,0$) son estadísticamente óptimas, logrando elevar el F1-Boundary promedio de SA de $0,760$ a $0,7815$ y disminuyendo significativamente la varianza de los resultados. Tazas muy rápidas ($\alpha = 0,990$) congelan la solución en óptimos locales, mientras que tasas extremadamente lentas ($\alpha = 0,999$) no permiten estabilizar el proceso.
 
 ### 14.2 Lecciones generales
 

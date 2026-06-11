@@ -97,6 +97,13 @@ def run_experiment(config_path: Path) -> None:
     all_results: list[dict[str, Any]] = []
     start_time = datetime.now(timezone.utc)
 
+    # Build all algorithm instances up front so we can interleave their execution
+    # across documents. Interleaving matters when an LLM evaluator with rate-limit
+    # backoff is present: running each algorithm sequentially over the whole
+    # dataset concentrates accumulated throttling on whichever algorithm runs
+    # last (typically SA), biasing its LLM score. Interleaving distributes that
+    # pressure uniformly across algorithms.
+    prepared: list[tuple[str, Any, int | None]] = []
     for algo_config in config.algorithms:
         algo_cls = ALGORITHM_REGISTRY.get(algo_config.name)
         if algo_cls is None:
@@ -118,18 +125,24 @@ def run_experiment(config_path: Path) -> None:
         except TypeError as exc:
             console.print(f"[red]Invalid params for {algo_config.name}: {exc}[/]")
             continue
-        console.print(f"\nRunning algorithm: [bold]{algo_config.name}[/]")
+        prepared.append((algo_config.name, algorithm, max_segments))
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        ) as progress:
-            task = progress.add_task(
-                f"Segmenting {len(dataset)} documents...", total=len(dataset)
-            )
+    console.print(
+        f"\nRunning {len(prepared)} algorithms interleaved over "
+        f"{len(dataset)} documents..."
+    )
 
-            for document, gt_boundaries in dataset:
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        task = progress.add_task(
+            "Segmenting...", total=len(dataset) * len(prepared)
+        )
+
+        for document, gt_boundaries in dataset:
+            for algo_name, algorithm, max_segments in prepared:
                 result = algorithm.segment(document, max_segments=max_segments)
 
                 n = document.n_sentences
@@ -139,7 +152,7 @@ def run_experiment(config_path: Path) -> None:
 
                 doc_result: dict[str, Any] = {
                     "experiment_id": config.experiment_id,
-                    "algorithm": algo_config.name,
+                    "algorithm": algo_name,
                     "doc_id": document.doc_id,
                     "n_sentences": n,
                     "n_ref_segments": len(gt_boundaries),

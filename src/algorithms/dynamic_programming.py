@@ -86,12 +86,16 @@ class DPSegmenter(BaseSegmenter):
                         dp[i][j] = val
                         split[i][j] = i_prev
 
-        # Backtrack from the best valid k (first from k downward that is finite)
-        best_k = k
-        for candidate in range(k, 0, -1):
-            if dp[n][candidate] > NEG_INF:
+        # Pick the j ∈ [1, k] that actually maximises dp[n][j]. The length-weighted
+        # cohesion objective is bounded but tends to grow with j, so in practice
+        # this still saturates at j = k for well-formed documents — but the code
+        # now reflects the real argmax rather than implicitly assuming it.
+        best_k = 1
+        best_value = dp[n][1]
+        for candidate in range(2, k + 1):
+            if dp[n][candidate] > best_value:
+                best_value = dp[n][candidate]
                 best_k = candidate
-                break
 
         boundaries: list[int] = []
         pos, segs = n, best_k
