@@ -464,6 +464,10 @@ Imagina que dibujamos la curva de similitud $\text{sim}[g]$ para todos los hueco
 
 ### 6.4 Algoritmo 4 — Recocido Simulado (Simulated Annealing, SA)
 
+#### Encuadre como técnica de simulación
+
+A diferencia de BF, DP y Greedy, SA no es un algoritmo determinista: es una **simulación estocástica** de un sistema físico (el recocido metalúrgico) que se reinterpreta como optimización combinatoria. En la terminología del Cap. 1 de *Temas de Simulación* (García, Martí, Pérez), SA es un sistema dinámico no-estacionario cuya función de transición de estado es no-determinista y depende de variables aleatorias generadas en cada iteración. Concretamente, en cada paso se generan dos variables uniformes discretas (la frontera a perturbar y la dirección $\pm 1$) y, cuando el movimiento empeora la cohesión, una variable uniforme continua $U \sim \mathcal{U}(0,1)$ para decidir su aceptación según el criterio de Metropolis. La generación de estas variables corresponde a los métodos descritos en el Cap. 2 del libro (algoritmo de la transformada inversa y distribución uniforme), y la corrida del algoritmo es una realización (en el sentido del Cap. 4) del proceso estocástico subyacente. Por eso el Experimento 5 (§10.5, §11.5) trata a SA como un sistema que se analiza con réplicas independientes y herramientas estadísticas, no como un algoritmo cuyo resultado se reporta una sola vez.
+
 #### Idea intuitiva
 
 El recocido simulado está inspirado en la metalurgia: cuando se calienta un metal y se enfría lentamente, los átomos se acomodan en una configuración de baja energía (estable). Análogamente:
@@ -852,7 +856,9 @@ Metodología: Se realiza una búsqueda por rejilla (grid search) cruzando los si
 - $\alpha \in [0.990, 0.995, 0.999]$
 - $N_{\text{iter}} \in [500, 1000, 2000]$
 
-Para cada configuración se computan el promedio de las métricas estructurales ($F_1$-Boundary, $P_k$, WindowDiff) y del tiempo de ejecución en milisegundos, acompañados de sus respectivos intervalos de confianza al 95 % (calculados con la distribución t de Student para muestras de tamaño $N = 30$). Esto permite evaluar la robustez y la significancia estadística de los cambios observados.
+Para cada configuración se computan el promedio de las métricas estructurales ($F_1$-Boundary, $P_k$, WindowDiff) y del tiempo de ejecución en milisegundos, acompañados de sus respectivos intervalos de confianza al 95 %. Esta metodología sigue el marco del Cap. 4 de *Temas de Simulación* (García, Martí, Pérez): se trata cada par (configuración, semilla, documento) como una observación independiente y se estima la media poblacional $\theta$ mediante la esperanza muestral $\bar{X} = \sum_i X_i / N$ (sección 4.1 del libro), con varianza muestral insesgada $S^2 = \sum_i (X_i - \bar{X})^2 / (N-1)$ (Proposición 4.1.2) y margen $t_{\alpha/2,\,N-1} \cdot S / \sqrt{N}$.
+
+Detalle técnico: el IC se computa sobre el conjunto de $N = 30 \times 20 = 600$ observaciones por configuración (30 semillas × 20 documentos), no sobre 30 réplicas agregadas. Con $N = 600$, $t_{0{,}025,\,599} \approx 1{,}96$ (en el código se usa la cota conservadora $2{,}045$ válida para $N \geq 30$, lo que infla el margen ~4 %). Esta decisión maximiza la potencia estadística pero supone independencia entre observaciones doc×semilla; como los documentos comparten dificultad latente, el IC reportado debe leerse como una cota inferior de la incertidumbre verdadera. Una variante más conservadora —promediar primero por semilla sobre los 20 documentos y construir el IC sobre las 30 medias resultantes— daría márgenes aproximadamente $\sqrt{600/30} \approx 4{,}5$ veces más anchos; la dirección del ranking entre configuraciones se mantiene en ambos casos.
 
 ### 10.6 Reproducibilidad
 
@@ -923,7 +929,7 @@ Greedy mantiene su perfil de "rápido y razonable": ~10× más rápido que DP y 
 
 ### 11.5 Experimento 5 — Análisis de sensibilidad de hiperparámetros de SA
 
-Se evaluó la sensibilidad del algoritmo de Recocido Simulado ante cambios en su temperatura inicial ($T_0$), tasa de enfriamiento ($\alpha$) y número de iteraciones ($N_{\text{iter}}$). La tabla a continuación muestra las 10 mejores configuraciones ordenadas por la métrica $F_1$-Boundary promedio, junto con sus intervalos de confianza al 95 % (calculados sobre 30 réplicas por documento).
+Se evaluó la sensibilidad del algoritmo de Recocido Simulado ante cambios en su temperatura inicial ($T_0$), tasa de enfriamiento ($\alpha$) y número de iteraciones ($N_{\text{iter}}$). La tabla a continuación muestra las 10 mejores configuraciones ordenadas por la métrica $F_1$-Boundary promedio, junto con sus intervalos de confianza al 95 % (calculados sobre las $N = 600$ observaciones doc×semilla por configuración, según el método descrito en §10.5; cota inferior de la incertidumbre por la no-independencia entre documentos).
 
 | $T_0$ | $\alpha$ | $N_{\text{iter}}$ | $F_1$-Boundary ↑ | $P_k$ ↓ | WindowDiff ↓ | Tiempo (ms) |
 |---|---|---|---|---|---|---|
