@@ -5,6 +5,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from rich.console import Console
@@ -20,6 +21,7 @@ from src.evaluation.metrics import (
     compute_window_diff,
 )
 from src.llm import get_llm_provider
+from src.llm.fallback_provider import NEUTRAL_RATIONALE
 
 console = Console()
 
@@ -92,7 +94,7 @@ def run_experiment(config_path: Path) -> None:
             f"[cyan]{llm_evaluator.model_name}[/]"
         )
 
-    all_results: list[dict] = []
+    all_results: list[dict[str, Any]] = []
     start_time = datetime.now(timezone.utc)
 
     for algo_config in config.algorithms:
@@ -114,9 +116,7 @@ def run_experiment(config_path: Path) -> None:
         try:
             algorithm = algo_cls(**params)
         except TypeError as exc:
-            console.print(
-                f"[red]Invalid params for {algo_config.name}: {exc}[/]"
-            )
+            console.print(f"[red]Invalid params for {algo_config.name}: {exc}[/]")
             continue
         console.print(f"\nRunning algorithm: [bold]{algo_config.name}[/]")
 
@@ -137,7 +137,7 @@ def run_experiment(config_path: Path) -> None:
                 wd = compute_window_diff(gt_boundaries, result.boundaries, n)
                 _, _, f1 = compute_f1_boundary(gt_boundaries, result.boundaries)
 
-                doc_result: dict = {
+                doc_result: dict[str, Any] = {
                     "experiment_id": config.experiment_id,
                     "algorithm": algo_config.name,
                     "doc_id": document.doc_id,
@@ -152,15 +152,21 @@ def run_experiment(config_path: Path) -> None:
                     "runtime_seconds": round(result.runtime_seconds, 4),
                     "llm_score": None,
                     "llm_used_fallback": None,
+                    "llm_n_segments": None,
+                    "llm_n_neutral": None,
                 }
 
                 if llm_evaluator is not None:
                     segments = result.to_segments(document)
                     scores = llm_evaluator.score_segmentation(segments)
-                    avg_llm = sum(s.score for s in scores) / len(scores)
-                    fallback_rate = sum(s.used_fallback for s in scores) / len(scores)
+                    n_scored = len(scores)
+                    avg_llm = sum(s.score for s in scores) / n_scored
+                    n_fallback = sum(s.used_fallback for s in scores)
+                    n_neutral = sum(s.rationale == NEUTRAL_RATIONALE for s in scores)
                     doc_result["llm_score"] = round(avg_llm, 2)
-                    doc_result["llm_used_fallback"] = round(fallback_rate, 2)
+                    doc_result["llm_used_fallback"] = round(n_fallback / n_scored, 2)
+                    doc_result["llm_n_segments"] = n_scored
+                    doc_result["llm_n_neutral"] = n_neutral
 
                 all_results.append(doc_result)
                 progress.advance(task)

@@ -1,0 +1,31 @@
+experiment_id: exp_wikipedia
+description: "Comparison of all algorithms on the real Wikipedia dataset (validates synthetic results on natural text)"
+
+dataset:
+  path: data/wikipedia/
+
+algorithms:
+  - name: dynamic_programming
+    params:
+      max_segments: 5
+  - name: greedy
+    params:
+      max_segments: 5
+      window_size: 2
+  - name: simulated_annealing
+    params:
+      max_segments: 5
+      n_iterations: 2000
+      cooling_rate: 0.995
+      random_seed: 42
+
+llm_evaluator:
+  provider: none
+
+evaluation:
+  metrics: [windowdiff, pk, f1_boundary, runtime_seconds]
+  random_seed: 42
+
+output:
+  path: results/exp_wikipedia/
+  save_raw: true

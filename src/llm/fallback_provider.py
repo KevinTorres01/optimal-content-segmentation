@@ -5,6 +5,11 @@ import concurrent.futures
 from src.core.interfaces import BaseLLMEvaluator
 from src.core.models import CohesionScore, Segment
 
+# Marker rationale used when both primary and fallback fail and a neutral
+# score is emitted. Stable contract — the runner reads this to count how many
+# scores fell to the neutral path (auditability of the fallback chain).
+NEUTRAL_RATIONALE = "Both primary and fallback providers failed"
+
 
 class FallbackEvaluator(BaseLLMEvaluator):
     """Tries a primary provider first; on failure, falls back to a second one.
@@ -66,7 +71,7 @@ class FallbackEvaluator(BaseLLMEvaluator):
             return CohesionScore(
                 segment_id=segment.segment_id,
                 score=3,
-                rationale="Both primary and fallback providers failed",
+                rationale=NEUTRAL_RATIONALE,
                 provider=self.provider_name,
                 model=self.model_name,
                 used_fallback=True,

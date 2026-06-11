@@ -6,7 +6,7 @@ from src.core.models import CohesionScore, LLMConfig, Segment
 from src.llm import check as check_module
 from src.llm.check import check_provider
 from src.llm.factory import get_llm_provider
-from src.llm.fallback_provider import FallbackEvaluator
+from src.llm.fallback_provider import NEUTRAL_RATIONALE, FallbackEvaluator
 from src.llm.groq_provider import GroqEvaluator
 from src.llm.rate_limit import call_with_retry, is_rate_limit_error
 
@@ -213,4 +213,5 @@ def test_fallback_degrades_when_both_fail(segment: Segment) -> None:
     result = fb.score_segment(segment)
     assert result.score == 3
     assert result.used_fallback is True
-    assert "failed" in result.rationale.lower()
+    # The runner relies on this exact rationale to count neutral scores.
+    assert result.rationale == NEUTRAL_RATIONALE

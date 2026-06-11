@@ -110,19 +110,6 @@ class CohesionScore(BaseModel):
         return v
 
 
-class RangeConfig(BaseModel):
-    """Integer range used in dataset configs."""
-
-    min: int
-    max: int
-
-    @model_validator(mode="after")
-    def min_lte_max(self) -> RangeConfig:
-        if self.min > self.max:
-            raise ValueError(f"min ({self.min}) must be <= max ({self.max})")
-        return self
-
-
 class LLMConfig(BaseModel):
     """LLM evaluator configuration block inside an experiment config."""
 

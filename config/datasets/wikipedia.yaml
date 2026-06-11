@@ -1,0 +1,65 @@
+dataset_name: wikipedia
+language: es
+
+# Articles span multiple semantic domains (sports, tech, science, politics, art,
+# economy, health, history) to mirror the synthetic dataset's topic diversity.
+# Each article's headings act as ground-truth segment boundaries.
+titles:
+  # Deportes
+  - "Real Madrid Club de Fútbol"
+  - "Rafael Nadal"
+  - "Lionel Messi"
+  - "Copa Mundial de Fútbol"
+
+  # Tecnología
+  - "Inteligencia artificial"
+  - "Aprendizaje automático"
+  - "Linux"
+  - "Python (lenguaje de programación)"
+
+  # Ciencia
+  - "Teoría de la relatividad"
+  - "ADN"
+  - "Sistema solar"
+  - "Tabla periódica de los elementos"
+
+  # Política
+  - "Organización de las Naciones Unidas"
+  - "Unión Europea"
+  - "Democracia"
+
+  # Arte
+  - "Pablo Picasso"
+  - "Renacimiento"
+  - "Museo del Prado"
+
+  # Economía
+  - "Banco Central Europeo"
+  - "Crisis financiera de 2008"
+  - "Bitcoin"
+
+  # Salud
+  - "COVID-19"
+  - "Penicilina"
+  - "Organización Mundial de la Salud"
+
+  # Historia
+  - "Revolución francesa"
+  - "Segunda Guerra Mundial"
+  - "Imperio romano"
+  - "Guerra Fría"
+
+# Truncación y filtros para emparejar el dataset sintético `small`
+# (objetivo: 15–36 oraciones, 3–5 segmentos).
+# Cada sección se trunca a `max_sentences_per_segment` oraciones y cada artículo
+# a `max_segments_per_doc` secciones. Los mínimos se aplican DESPUÉS de truncar.
+min_sentences_per_doc: 15
+max_sentences_per_doc: 40
+min_segments_per_doc: 3
+max_segments_per_doc: 5
+max_sentences_per_segment: 8
+min_sentence_chars: 25
+
+# Pausa entre llamadas. La API de Wikipedia es generosa pero tira 429 si
+# detecta bursts; 1.5 s + backoff exponencial dentro del loader bastan.
+request_delay_seconds: 1.5

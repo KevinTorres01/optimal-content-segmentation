@@ -52,7 +52,8 @@ src/
 │   └── check.py           # CLI connectivity checker
 ├── dataset/
 │   ├── generator.py       # DatasetGenerator — synthetic datasets in ES/EN
-│   └── schemas.py         # DatasetConfig Pydantic schema
+│   ├── wikipedia_loader.py # WikipediaLoader — fetches real articles via MediaWiki API
+│   └── schemas.py         # DatasetConfig & WikipediaDatasetConfig Pydantic schemas
 ├── evaluation/
 │   └── metrics.py         # WindowDiff, Pk, F1-boundary (no external deps)
 └── experiments/
@@ -60,13 +61,15 @@ src/
 
 config/
 ├── datasets/
-│   ├── small.yaml                    # 20-document dataset, 15–36 sentences/doc
-│   └── tiny.yaml                     # 20-document dataset, 5–12 sentences/doc (BF-friendly)
+│   ├── small.yaml                    # 20-document synthetic dataset, 12–40 sentences/doc
+│   ├── tiny.yaml                     # 20-document synthetic dataset, 4–12 sentences/doc (BF-friendly)
+│   └── wikipedia.yaml                # 28 Spanish-Wikipedia titles → 25 accepted after filtering
 └── experiments/
     ├── smoke_test.yaml               # End-to-end test without LLM
     ├── exp_compare_algorithms.yaml   # DP vs Greedy vs SA on `small`, no LLM
     ├── exp_bf_vs_dp.yaml             # Brute Force vs DP on `tiny` (correctness validation)
-    └── exp_llm_groq.yaml             # Full experiment with Groq LLM evaluation
+    ├── exp_llm_groq.yaml             # Full experiment with Groq LLM evaluation
+    └── exp_wikipedia.yaml            # DP vs Greedy vs SA on real Wikipedia text
 
 tests/
 ├── unit/
@@ -74,7 +77,8 @@ tests/
 │   ├── test_dp_segmenter.py
 │   ├── test_algorithms.py  # BruteForce, Greedy, SA
 │   ├── test_generator.py
-│   └── test_llm_factory.py
+│   ├── test_llm_factory.py
+│   └── test_wikipedia_loader.py
 ├── integration/
 │   ├── test_smoke.py
 │   └── test_llm_runner.py
@@ -137,6 +141,18 @@ This creates:
 - `data/small/metadata.json` — dataset statistics and config
 
 The generator creates synthetic multi-topic documents in Spanish (or English). Topics include sports, technology, politics, science, art, economics, health, and history. The `overlap_level` parameter controls how much vocabulary is shared between topics.
+
+### Wikipedia dataset (real text, requires internet)
+
+In addition to the synthetic datasets, you can build a dataset from real Spanish Wikipedia articles. The level-2 section headings (`==`) act as ground-truth boundaries.
+
+```bash
+python -m src.dataset.wikipedia_loader \
+    --config config/datasets/wikipedia.yaml \
+    --output data/wikipedia/
+```
+
+The loader downloads the configured titles via the MediaWiki API, splits each article into sentences, truncates to match the size envelope of the `small` dataset, and writes the same `documents/`, `boundaries/`, `metadata.json` layout. It honours a 1.5 s inter-request delay and retries with exponential backoff on HTTP 429.
 
 ---
 
