@@ -228,7 +228,7 @@ $$\binom{n - 1}{k - 1}$$
 Tabla de valores ilustrativos:
 
 | $n$ | $k$ | $\binom{n-1}{k-1}$ | Comentario |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 10 | 3 | 36 | Trivial |
 | 15 | 5 | 1.001 | Manejable |
 | 20 | 5 | 3.876 | Manejable |
@@ -530,7 +530,7 @@ Después de 2000 iteraciones, la temperatura es $1{,}0 \cdot 0{,}995^{2000} \app
 ### 6.5 Tabla resumen de los cuatro algoritmos
 
 | Algoritmo | Complejidad tiempo | Tipo | Garantía | Mejor para |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Brute Force | $O(\binom{n-1}{k-1} \cdot n)$ | Exhaustivo | Óptimo global | Validar otros algoritmos ($n \leq 15$) |
 | Dynamic Programming | $O(n^2 \cdot k)$ | Exacto | Óptimo global | Producción general |
 | Greedy (TextTiling) | $O(n \cdot w)$ | Heurístico | Ninguna | Velocidad máxima |
@@ -688,7 +688,7 @@ language: es
 Estadísticas resultantes:
 
 | Parámetro | Valor |
-|---|---|
+| --- | --- |
 | Documentos | 20 |
 | Oraciones por documento (media) | 22,9 |
 | Oraciones por documento (rango) | 15 – 36 |
@@ -705,7 +705,7 @@ Documentos más cortos (5–12 oraciones observadas; configurado para 4–12) pa
 Configuración (`config/datasets/wikipedia.yaml`): 28 títulos de artículos cubriendo los 8 dominios (deportes, tecnología, ciencia, política, arte, economía, salud, historia). Tras descarga y filtrado:
 
 | Parámetro | Valor |
-|---|---|
+| --- | --- |
 | Artículos solicitados | 28 |
 | Documentos aceptados | 25 |
 | Documentos descartados (429 persistente / filtros) | 3 |
@@ -873,7 +873,7 @@ Importancia: cuantifica el impacto de elegir `k` automáticamente frente a fijar
 ### 10.7 Reproducibilidad
 
 | Parámetro | Valor |
-|---|---|
+| --- | --- |
 | Semilla aleatoria (todos los experimentos) | 42 |
 | Python | 3.12.3 |
 | scikit-learn | ≥ 1.3 |
@@ -889,7 +889,7 @@ La semilla se registra en `run_metadata.json` junto a cada resultado.
 ### 11.1 Experimento 2 — BF vs DP (dataset `tiny`)
 
 | Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | Runtime (ms) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Brute Force | 0,1633 | 0,1717 | 0,8167 | 1,79 |
 | Dynamic Programming | 0,1633 | 0,1717 | 0,8167 | 1,76 |
 
@@ -898,7 +898,7 @@ Lectura: las dos filas son idénticas en métricas de calidad. Esto prueba exper
 ### 11.2 Experimento 1 — DP, Greedy, SA en `small`
 
 | Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | Runtime (ms) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Dynamic Programming | 0,1728 ± 0,157 | 0,1945 ± 0,162 | 0,797 ± 0,124 | 10,8 |
 | Greedy (TextTiling) | 0,1288 ± 0,076 | 0,2373 ± 0,125 | 0,743 ± 0,140 | 1,2 |
 | Simulated Annealing | 0,2121 ± 0,151 | 0,2261 ± 0,155 | 0,760 ± 0,119 | 16,2 |
@@ -906,7 +906,7 @@ Lectura: las dos filas son idénticas en métricas de calidad. Esto prueba exper
 ### 11.3 Experimento 3 — Con LLM
 
 | Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | LLM Score ↑ | Runtime (ms) |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | Dynamic Programming | 0,1728 | 0,1945 | 0,797 | 4,54 ± 0,36 | 25,6 |
 | Greedy (TextTiling) | 0,1288 | 0,2373 | 0,743 | 4,41 ± 0,53 | 3,6 |
 | Simulated Annealing | 0,2121 | 0,2261 | 0,760 | 4,42 ± 0,34 | 29,6 |
@@ -918,7 +918,7 @@ Uso del fallback LLM: la unidad de llamada es un segmento (no un documento). Con
 ### 11.4 Experimento 4 — DP, Greedy, SA en `wikipedia` (texto real)
 
 | Algoritmo | Pk ↓ | WindowDiff ↓ | F1-Boundary ↑ | Runtime (ms) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Dynamic Programming | 0,3741 | 0,3963 | 0,4533 | 24,3 |
 | Greedy (TextTiling) | 0,3624 | 0,4129 | 0,4233 | 2,5 |
 | Simulated Annealing | 0,3513 | 0,3675 | 0,4833 | 31,0 |
@@ -926,7 +926,7 @@ Uso del fallback LLM: la unidad de llamada es un segmento (no un documento). Con
 Lectura inmediata — caída del rendimiento absoluto: comparando con el dataset sintético `small`:
 
 | Métrica | DP small | DP wikipedia | Caída relativa |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Pk ↓ | 0,1728 | 0,3741 | +117 % de error |
 | WindowDiff ↓ | 0,1945 | 0,3963 | +104 % de error |
 | F1-Boundary ↑ | 0,797 | 0,453 | −43 % |
@@ -942,7 +942,7 @@ Greedy mantiene su perfil de "rápido y razonable": ~10× más rápido que DP y 
 Se evaluó la sensibilidad del algoritmo de Recocido Simulado ante cambios en su temperatura inicial ($T_0$), tasa de enfriamiento ($\alpha$) y número de iteraciones ($N_{\text{iter}}$). La tabla a continuación muestra las 10 mejores configuraciones ordenadas por la métrica $F_1$-Boundary promedio, junto con sus intervalos de confianza al 95 % (calculados sobre las $N = 600$ observaciones doc×semilla por configuración, según el método descrito en §10.5; cota inferior de la incertidumbre por la no-independencia entre documentos).
 
 | $T_0$ | $\alpha$ | $N_{\text{iter}}$ | $F_1$-Boundary ↑ | $P_k$ ↓ | WindowDiff ↓ | Tiempo (ms) |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | 0,5 | 0,995 | 2000 | **0,7815 ± 0,0106** | 0,1988 ± 0,0124 | 0,2153 ± 0,0128 | 17,8 ± 0,5 |
 | 1,0 | 0,995 | 2000 | **0,7815 ± 0,0105** | 0,1929 ± 0,0123 | 0,2117 ± 0,0128 | 17,9 ± 0,5 |
 | 0,5 | 0,995 | 1000 | 0,7811 ± 0,0105 | 0,1999 ± 0,0123 | 0,2163 ± 0,0128 | 14,2 ± 0,4 |
@@ -951,7 +951,7 @@ Se evaluó la sensibilidad del algoritmo de Recocido Simulado ante cambios en su
 | 0,5 | 0,990 | 2000 | 0,7760 ± 0,0106 | 0,2056 ± 0,0122 | 0,2203 ± 0,0127 | 18,2 ± 0,5 |
 | 2,0 | 0,990 | 1000 | 0,7756 ± 0,0105 | 0,2066 ± 0,0126 | 0,2222 ± 0,0130 | 14,8 ± 0,5 |
 | 2,0 | 0,990 | 2000 | 0,7756 ± 0,0105 | 0,2066 ± 0,0126 | 0,2222 ± 0,0130 | 18,1 ± 0,5 |
-| 0,5 | 0,990 | 500  | 0,7716 ± 0,0106 | 0,2106 ± 0,0120 | 0,2251 ± 0,0125 | 12,6 ± 0,5 |
+| 0,5 | 0,990 | 500 | 0,7716 ± 0,0106 | 0,2106 ± 0,0120 | 0,2251 ± 0,0125 | 12,6 ± 0,5 |
 | 1,0 | 0,995 | 1000 | 0,7714 ± 0,0104 | 0,2078 ± 0,0120 | 0,2256 ± 0,0125 | 14,1 ± 0,5 |
 
 #### Análisis de tendencias y efectos principales:
@@ -990,7 +990,7 @@ Greedy es ~9× más rápido que DP en el experimento puro sin LLM (1,2 ms vs 10,
 ### 11.7 Resumen visual de quién gana en qué
 
 | Métrica | Ganador en sintético `small` | Ganador en Wikipedia |
-|---|---|---|
+| --- | --- | --- |
 | Pk | Greedy | SA |
 | WindowDiff | DP | SA |
 | F1-Boundary | DP | SA |
@@ -1006,7 +1006,7 @@ Los Experimentos 1–5 fijaron `max_segments = 5` para aislar el comportamiento 
 **Dataset sintético `small`** (k real variable: 8 docs con 3 segmentos, 8 con 4, 4 con 5). Comparación k=5 fijo (Exp. 1) vs auto-k:
 
 | Algoritmo | F1 k=5 | F1 auto | Pk k=5 | Pk auto | WD k=5 | WD auto |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | Dynamic Programming | 0,797 | **0,963** | 0,173 | **0,038** | 0,195 | **0,038** |
 | Simulated Annealing | 0,760 | **0,901** | 0,212 | **0,093** | 0,226 | **0,093** |
 | Greedy (TextTiling) | 0,743 | 0,729 | 0,129 | 0,157 | 0,237 | **0,194** |
@@ -1016,7 +1016,7 @@ La mejora es grande para los algoritmos basados en cohesión (DP y SA): F1 sube 
 **Dataset `wikipedia`** (ground truth truncado a 5 segmentos por documento, §11.4). Comparación k=5 fijo (Exp. 4) vs auto-k:
 
 | Algoritmo | F1 k=5 | F1 auto | Pk k=5 | Pk auto | WD k=5 | WD auto |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | Dynamic Programming | 0,453 | 0,365 | 0,374 | 0,393 | 0,396 | 0,405 |
 | Simulated Annealing | 0,483 | 0,441 | 0,351 | 0,351 | 0,368 | **0,357** |
 | Greedy (TextTiling) | 0,423 | 0,372 | 0,362 | 0,373 | 0,413 | **0,402** |
@@ -1077,7 +1077,7 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 ## 13. Limitaciones y mejoras futuras
 
 | Prioridad | Limitación | Mejora propuesta | Impacto estimado |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Alta | TF-IDF degrada en texto natural (−43 % F1 entre sintético y Wikipedia) | Reemplazar por embeddings densos (Sentence-BERT) | +15–20 % F1 en textos reales |
 | Completada | SA con hiperparámetros por defecto | Búsqueda por rejilla (grid search) de 27 configs con 30 réplicas (Exp. 5) | Logró +2,8 % de F1 (0,760 → 0,7815) y menor error en SA |
 | Media | Wikipedia sin evaluación LLM | Correr `exp_wikipedia` con `provider: groq` para medir LLM score sobre texto real | Validación semántica del cambio de ranking |
@@ -1123,7 +1123,7 @@ Los experimentos miden algoritmos bajo condiciones controladas (mismo `k` para t
 Dado que en la práctica el texto siempre es natural y `k` siempre es desconocido, **la recomendación por defecto es SA + auto-k**. Los datos del Experimento 6 lo confirman:
 
 | Algoritmo + auto-k | F1 ↑ | Pk ↓ | WindowDiff ↓ |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **SA** | **0,441** | **0,351** | **0,357** |
 | Greedy | 0,372 | 0,373 | 0,402 |
 | DP | 0,365 | 0,393 | 0,405 |
@@ -1137,7 +1137,7 @@ El único caso donde DP es la mejor opción es cuando el texto tiene vocabulario
 **Una nota sobre auto-k y DP:** el método del codo (§15.7) usa DP internamente para barrer la curva J(k). Esto podría hacer pensar que usar DP como algoritmo de segmentación es gratuito — la tabla de DP ya está calculada. Y es cierto: cuando se usa DP + auto-k, el sistema reutiliza esa tabla y no hace ningún cálculo adicional (las fronteras salen del backtracking sobre la misma tabla, O(k·n)). Pero eso no convierte a DP en la mejor opción para texto natural: el barrido de auto-k calcula el óptimo exacto de la función TF-IDF, y ese óptimo sigue siendo subóptimo para texto con vocabulario compartido. SA opera sobre ese mismo `k` pero explora el espacio de fronteras de forma estocástica, encontrando particiones que el proxy TF-IDF considera ligeramente peores pero que las métricas reales premian.
 
 | Situación | Recomendación |
-|---|---|
+| --- | --- |
 | Texto natural (caso habitual: libros, artículos, transcripciones) | **SA + auto-k** con `α=0,995`, `T₀=1,0`, `n_iter=2000` |
 | Texto con vocabulario muy disjunto entre temas (corpus técnico especializado) | **DP + auto-k** — exacto y eficiente, una sola pasada |
 | Velocidad prioritaria sobre calidad | **Greedy + auto-k** — el barrido de auto-k domina el tiempo total, Greedy añade solo ~3 ms |
