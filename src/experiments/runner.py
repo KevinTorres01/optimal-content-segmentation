@@ -13,8 +13,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from src.algorithms import ALGORITHM_REGISTRY
+from src.algorithms.auto_k import find_optimal_k
 from src.core.config import load_config
-from src.core.models import Document
+from src.core.models import Document, SegmentationResult
 from src.evaluation.metrics import (
     compute_f1_boundary,
     compute_pk,
@@ -24,6 +25,33 @@ from src.llm import get_llm_provider
 from src.llm.fallback_provider import NEUTRAL_RATIONALE
 
 console = Console()
+
+AUTO_K = "auto"
+
+
+def _normalize_max_segments(value: Any) -> int | str | None:
+    """Normalize a YAML ``max_segments`` value to an int, None, or the sentinel.
+
+    Accepts an integer (fixed k), null/omitted (algorithm default), or the
+    string ``"auto"`` (per-document automatic selection via the elbow method
+    in :func:`src.algorithms.auto_k.find_optimal_k`).
+
+    Args:
+        value: Raw value read from the experiment YAML.
+
+    Returns:
+        An ``int``, ``None``, or the literal ``"auto"`` sentinel.
+
+    Raises:
+        ValueError: If a string other than ``"auto"`` is given.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        if value.strip().lower() == AUTO_K:
+            return AUTO_K
+        raise ValueError(f"max_segments must be an integer or 'auto', got {value!r}")
+    return int(value)
 
 
 def _load_dataset(dataset_path: Path) -> list[tuple[Document, list[int]]]:
@@ -103,7 +131,7 @@ def run_experiment(config_path: Path) -> None:
     # dataset concentrates accumulated throttling on whichever algorithm runs
     # last (typically SA), biasing its LLM score. Interleaving distributes that
     # pressure uniformly across algorithms.
-    prepared: list[tuple[str, Any, int | None]] = []
+    prepared: list[tuple[str, Any, int | str | None]] = []
     for algo_config in config.algorithms:
         algo_cls = ALGORITHM_REGISTRY.get(algo_config.name)
         if algo_cls is None:
@@ -114,7 +142,7 @@ def run_experiment(config_path: Path) -> None:
             continue
 
         params = dict(algo_config.params)
-        max_segments = params.pop("max_segments", None)
+        max_segments = _normalize_max_segments(params.pop("max_segments", None))
         # Default any unset random_seed to the experiment-wide seed so SA (and any
         # future stochastic algorithm) stays reproducible even when the YAML omits it.
         constructor_params = inspect.signature(algo_cls).parameters
@@ -137,13 +165,37 @@ def run_experiment(config_path: Path) -> None:
         TextColumn("[progress.description]{task.description}"),
         transient=True,
     ) as progress:
-        task = progress.add_task(
-            "Segmenting...", total=len(dataset) * len(prepared)
-        )
+        task = progress.add_task("Segmenting...", total=len(dataset) * len(prepared))
 
         for document, gt_boundaries in dataset:
+            # Auto-k is a document-level decision based on the algorithm-agnostic
+            # DP cohesion curve, so compute it once per document and share it
+            # across every algorithm that requested it. This keeps the comparison
+            # fair (all algorithms target the same k) and avoids re-running the DP
+            # sweep once per algorithm.
+            auto_k_result = None
             for algo_name, algorithm, max_segments in prepared:
-                result = algorithm.segment(document, max_segments=max_segments)
+                effective_k: int | None
+                if isinstance(max_segments, str):  # the "auto" sentinel
+                    if auto_k_result is None:
+                        auto_k_result = find_optimal_k(document)
+                    effective_k = auto_k_result.k
+                    # DP boundaries were already computed during the auto-k sweep
+                    # (the split matrix is stored in one pass). Reuse them directly
+                    # to avoid a redundant second triple-loop run.
+                    if algo_name == "dynamic_programming" and auto_k_result.boundaries:
+                        result = SegmentationResult(
+                            doc_id=document.doc_id,
+                            boundaries=auto_k_result.boundaries,
+                            algorithm_name=algorithm.name,
+                            runtime_seconds=0.0,
+                        )
+                    else:
+                        result = algorithm.segment(document, max_segments=effective_k)
+                else:
+                    # max_segments is int or None once the "auto" case is excluded
+                    effective_k = max_segments
+                    result = algorithm.segment(document, max_segments=effective_k)
 
                 n = document.n_sentences
                 pk = compute_pk(gt_boundaries, result.boundaries, n)
@@ -157,6 +209,8 @@ def run_experiment(config_path: Path) -> None:
                     "n_sentences": n,
                     "n_ref_segments": len(gt_boundaries),
                     "n_pred_segments": result.n_segments,
+                    "k_requested": effective_k,
+                    "k_auto": max_segments == AUTO_K,
                     "boundaries_ref": gt_boundaries,
                     "boundaries_pred": result.boundaries,
                     "pk": round(pk, 4),
@@ -209,6 +263,7 @@ def run_experiment(config_path: Path) -> None:
         "random_seed": config.evaluation.random_seed,
         "n_documents": len(dataset),
         "algorithms": [a.name for a in config.algorithms],
+        "max_segments": {name: ms for name, _, ms in prepared},
         "llm_provider": config.llm_evaluator.provider,
         "config_path": str(config_path),
     }

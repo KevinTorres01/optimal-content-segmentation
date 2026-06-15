@@ -72,6 +72,18 @@ def split_into_sentences(text: str, min_chars: int = 5) -> list[str]:
     return sentences
 
 
+def parse_max_segments(raw: str) -> int | str:
+    """Parse the -k flag: an integer, or the literal 'auto' for elbow selection."""
+    if raw.strip().lower() == "auto":
+        return "auto"
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"-k expects an integer or 'auto', got: {raw!r}"
+        ) from exc
+
+
 def parse_param(raw: str) -> tuple[str, int | float | str]:
     """Parse a --param key=value pair, coercing numeric values."""
     if "=" not in raw:
@@ -128,9 +140,7 @@ def render_result(
 
 def _prompt_text_source(console: Console) -> str:
     """Ask the user to type or paste the text to segment."""
-    console.print(
-        "[bold]Escribe o pega el texto que quieres segmentar.[/bold]"
-    )
+    console.print("[bold]Escribe o pega el texto que quieres segmentar.[/bold]")
     console.print(
         "[dim]Cuando termines, pulsa [bold]Ctrl+D[/bold] (Linux/macOS) "
         "o [bold]Ctrl+Z + Enter[/bold] (Windows).[/dim]"
@@ -155,7 +165,9 @@ def _prompt_text_source(console: Console) -> str:
             path = Path(parts[1]).expanduser()
             if path.is_file():
                 return path.read_text(encoding="utf-8")
-            console.print(f"[red]No existe el archivo: {path}. Usando el ejemplo.[/red]")
+            console.print(
+                f"[red]No existe el archivo: {path}. Usando el ejemplo.[/red]"
+            )
             return _EXAMPLE_TEXT
         console.print("[red]Falta la ruta tras :archivo. Usando el ejemplo.[/red]")
         return _EXAMPLE_TEXT
@@ -183,9 +195,7 @@ def _prompt_algorithm(console: Console) -> str:
 
 def _print_auto_k_curve(console: Console, auto: AutoKResult) -> None:
     """Show the J(k) curve and which k was picked."""
-    console.print(
-        f"\n[dim]Auto-k explorando objetivo J(k) por DP exacto…[/dim]"
-    )
+    console.print("\n[dim]Auto-k explorando objetivo J(k) por DP exacto…[/dim]")
     table = Table.grid(padding=(0, 2))
     table.add_column(style="cyan", justify="right")
     table.add_column(justify="right")
@@ -195,14 +205,11 @@ def _print_auto_k_curve(console: Console, auto: AutoKResult) -> None:
         table.add_row(f"k={k}", f"J={j:.4f}", marker)
     console.print(table)
     console.print(
-        f"[green]✓[/green] k = [bold]{auto.k}[/bold]  "
-        f"[dim]({auto.rationale})[/dim]"
+        f"[green]✓[/green] k = [bold]{auto.k}[/bold]  " f"[dim]({auto.rationale})[/dim]"
     )
 
 
-def _prompt_k(
-    console: Console, document: Document, last_k: int | None
-) -> int:
+def _prompt_k(console: Console, document: Document, last_k: int | None) -> int:
     """Ask for k, defaulting to automatic elbow-based selection."""
     n = document.n_sentences
     if n <= 2:
@@ -364,7 +371,26 @@ def run_one_shot(console: Console, args: argparse.Namespace) -> int:
             f"≤ 15 sentences; got {document.n_sentences}."
         )
 
-    result = segmenter.segment(document, max_segments=args.max_segments)
+    max_segments = args.max_segments
+    if max_segments == "auto":
+        auto = find_optimal_k(document)
+        _print_auto_k_curve(console, auto)
+        # Reuse boundaries from the auto-k sweep when DP is the chosen algorithm —
+        # they were computed in the same pass, so no second triple-loop needed.
+        if args.algorithm == "dynamic_programming" and auto.boundaries:
+            from src.core.models import SegmentationResult
+
+            result = SegmentationResult(
+                doc_id=args.doc_id,
+                boundaries=auto.boundaries,
+                algorithm_name=segmenter.name,
+                runtime_seconds=0.0,
+            )
+            render_result(console, document, result)
+            return 0
+        max_segments = auto.k
+
+    result = segmenter.segment(document, max_segments=max_segments)
     render_result(console, document, result)
     return 0
 
@@ -389,9 +415,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-k",
         "--max-segments",
-        type=int,
+        type=parse_max_segments,
         default=None,
-        help="Maximum number of segments (default: min(5, n_sentences)).",
+        metavar="N|auto",
+        help=(
+            "Number of segments: an integer, or 'auto' to pick k automatically "
+            "with the elbow method (default: min(5, n_sentences))."
+        ),
     )
     parser.add_argument(
         "--param",

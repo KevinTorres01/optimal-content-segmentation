@@ -861,7 +861,16 @@ Para cada configuración se computan el promedio de las métricas estructurales 
 
 Detalle técnico: el IC se computa sobre el conjunto de $N = 30 \times 20 = 600$ observaciones por configuración (30 semillas × 20 documentos), no sobre 30 réplicas agregadas. Con $N = 600$, $t_{0{,}025,\,599} \approx 1{,}96$ (en el código se usa la cota conservadora $2{,}045$ válida para $N \geq 30$, lo que infla el margen ~4 %). Esta decisión maximiza la potencia estadística pero supone independencia entre observaciones doc×semilla; como los documentos comparten dificultad latente, el IC reportado debe leerse como una cota inferior de la incertidumbre verdadera. Una variante más conservadora —promediar primero por semilla sobre los 20 documentos y construir el IC sobre las 30 medias resultantes— daría márgenes aproximadamente $\sqrt{600/30} \approx 4{,}5$ veces más anchos; la dirección del ranking entre configuraciones se mantiene en ambos casos.
 
-### 10.6 Reproducibilidad
+### 10.6 Experimento 6 — Selección automática de k
+
+ID: `exp_auto_k_small` (sintético) y `exp_auto_k` (Wikipedia)
+Pregunta: ¿cuánto mejora la segmentación cuando `k` se elige automáticamente por documento en lugar de fijarse globalmente a priori?
+Dataset: `small` (20 docs, k real 3/4/5) y `wikipedia` (25 artículos, ground truth truncado a 5)
+LLM: ninguno
+Método: cada algoritmo declara `max_segments: auto` en el YAML; el runner llama una sola vez por documento a `find_optimal_k` (método del codo / Kneedle sobre la curva del objetivo óptimo de DP, §15.7) y pasa ese `k` a los tres algoritmos. Es la contraparte directa de los Experimentos 1 y 4, que fijan `k = 5`.
+Importancia: cuantifica el impacto de elegir `k` automáticamente frente a fijarlo a priori. Separa dos escenarios opuestos: el sintético, donde el `k` real varía por documento (3, 4 o 5), y Wikipedia, donde el ground truth está truncado a 5 por construcción. Comparar ambos permite extraer conclusiones sobre cuándo vale la pena activar la selección automática.
+
+### 10.7 Reproducibilidad
 
 | Parámetro | Valor |
 |---|---|
@@ -990,6 +999,32 @@ Greedy es ~9× más rápido que DP en el experimento puro sin LLM (1,2 ms vs 10,
 
 El cambio de ganador entre el dataset sintético y el real es el hallazgo más importante de §11.4: la elección de algoritmo óptimo depende de la naturaleza del texto, no solo de la métrica.
 
+### 11.8 Experimento 6 — Selección automática de k
+
+Los Experimentos 1–5 fijaron `max_segments = 5` para aislar el comportamiento de cada algoritmo en fronteras: cuando todos los algoritmos usan el mismo `k`, cualquier diferencia en Pk/F1 proviene de *dónde* colocan las fronteras, no de *cuántas* colocan. El Experimento 6 activa la selección automática (`max_segments: auto`): el número de segmentos lo elige el método del codo por documento (§15.7), lo que permite evaluar la otra dimensión del problema — cuántos segmentos producir.
+
+**Dataset sintético `small`** (k real variable: 8 docs con 3 segmentos, 8 con 4, 4 con 5). Comparación k=5 fijo (Exp. 1) vs auto-k:
+
+| Algoritmo | F1 k=5 | F1 auto | Pk k=5 | Pk auto | WD k=5 | WD auto |
+|---|---|---|---|---|---|---|
+| Dynamic Programming | 0,797 | **0,963** | 0,173 | **0,038** | 0,195 | **0,038** |
+| Simulated Annealing | 0,760 | **0,901** | 0,212 | **0,093** | 0,226 | **0,093** |
+| Greedy (TextTiling) | 0,743 | 0,729 | 0,129 | 0,157 | 0,237 | **0,194** |
+
+La mejora es grande para los algoritmos basados en cohesión (DP y SA): F1 sube +0,17 y +0,14, y Pk/WindowDiff caen ~78–80 %. La razón es directa: con `k = 5` fijo, DP y SA sobre-segmentaban los documentos cuyo `k` real era 3 o 4; al elegir `k` automáticamente recuperan el número correcto de segmentos. El codo acierta el `k` exacto en 16 de 20 documentos (k medio 3,60 vs 3,80 real; MAE 0,20). Greedy apenas cambia: su criterio de valles ya colocaba fronteras razonables y es menos sensible al valor de `k`.
+
+**Dataset `wikipedia`** (ground truth truncado a 5 segmentos por documento, §11.4). Comparación k=5 fijo (Exp. 4) vs auto-k:
+
+| Algoritmo | F1 k=5 | F1 auto | Pk k=5 | Pk auto | WD k=5 | WD auto |
+|---|---|---|---|---|---|---|
+| Dynamic Programming | 0,453 | 0,365 | 0,374 | 0,393 | 0,396 | 0,405 |
+| Simulated Annealing | 0,483 | 0,441 | 0,351 | 0,351 | 0,368 | **0,357** |
+| Greedy (TextTiling) | 0,423 | 0,372 | 0,362 | 0,373 | 0,413 | **0,402** |
+
+Aquí auto-k queda ligeramente por debajo del `k = 5` fijo en F1 (k medio elegido 3,84). El motivo no es un fallo del método sino un artefacto del dataset: la referencia de Wikipedia está truncada a exactamente 5 segmentos por construcción (§11.4), así que fijar `k = 5` "acierta" el número real en 24 de 25 documentos por diseño —una ventaja que ningún método ciego al ground truth puede igualar—. Pk y WindowDiff se mantienen prácticamente iguales (en SA, Pk idéntico y WindowDiff incluso mejor).
+
+Conclusión del experimento: cuando el `k` real es genuinamente variable (sintético, el caso realista), auto-k gana con claridad. Cuando el `k` real está fijado de antemano por el diseño del corpus (Wikipedia truncado), fijar `k = 5` coincide con el ground truth en 24 de 25 documentos por construcción — una ventaja que ningún método ciego al ground truth puede igualar — y auto-k paga un coste pequeño por no conocerlo. En ambos escenarios, el sistema produce una segmentación completa sin que el usuario tenga que especificar `k`.
+
 ---
 
 ## 12. Discusión: por qué pasó lo que pasó
@@ -1006,14 +1041,14 @@ En el dataset sintético, el objetivo TF-IDF tiene un óptimo nítido porque los
 
 En el dataset Wikipedia, el vocabulario natural aplana el paisaje de cohesión: "óptimo del proxy TF-IDF" deja de coincidir con "óptimo del ground truth". DP se queda atrapado maximizando un objetivo que ya no es buen indicador, mientras que la aleatoriedad de SA permite explorar fronteras que el proxy considera ligeramente peores pero que el ground truth premia. Es un caso clásico donde la metaheurística supera al exacto no por encontrar mejor óptimo del objetivo, sino por encontrar uno menos malo respecto al objetivo verdadero no observable. En este entorno real, contar con una parametrización optimizada resulta crítico para que la exploración no degenere en caminos subóptimos ruidosos.
 
-### 12.3 ¿Por qué los tres algoritmos predicen siempre 5 segmentos?
+### 12.3 ¿Por qué los Experimentos 1–4 fijan k = 5?
 
-Configuramos `max_segments = 5`. Dos factores se combinan:
+Los primeros experimentos fijan `max_segments = 5` deliberadamente, para aislar la calidad de las fronteras de la elección del número de segmentos. Cuando todos los algoritmos comparten el mismo `k`, las diferencias en Pk/F1 reflejan únicamente *dónde* colocan las fronteras — que es la pregunta central de los Experimentos 1–4. Hay dos mecanismos que hacen que los algoritmos saturen ese `k`:
 
 1. BF enumera particiones de exactamente $k_{\max}$ segmentos. DP realiza un verdadero $\arg\max_j \text{dp}[n][j]$ sobre $j \in [1, k_{\max}]$, pero como la función objetivo ponderada por longitud crece con $j$, el argmax satura $k_{\max}$ en la práctica. SA arranca con una segmentación uniformemente espaciada de $k_{\max}$ segmentos y solo perturba posiciones, sin añadir ni quitar fronteras.
-2. La función objetivo crece (débilmente) con más segmentos: dividir un segmento largo en dos suele aumentar la cohesión total porque cada mitad concentra mejor su tópico, así que aunque la implementación permitiera elegir un $k$ menor, el óptimo seguiría tendiendo a $k_{\max}$.
+2. La función objetivo crece (débilmente) con más segmentos: dividir un segmento largo en dos suele aumentar la cohesión total porque cada mitad concentra mejor su tópico.
 
-Resultado: los tres algoritmos predicen 5 segmentos en todos los documentos, mientras que la referencia tiene 3,80 segmentos en promedio. Esto es sobresegmentación sistemática y se traduce en una caída de F1 cuando la referencia tiene 3 segmentos. La sección 13 propone como mejora la selección automática de $k$ (penalizando el número de segmentos en la función objetivo, o usando el `dp[n][j]` para distintos $j$ con un criterio tipo BIC/MDL).
+El efecto observable es que los tres algoritmos predicen 5 segmentos en todos los documentos del dataset `small`, mientras que la referencia tiene 3,80 en promedio. Esto no es una falla de diseño sino la consecuencia esperada de fijar `k` para controlar la variable. El Experimento 6 (§11.8) levanta esa restricción y evalúa la selección automática de `k`.
 
 ### 12.4 ¿El LLM es confiable como evaluador?
 
@@ -1044,8 +1079,6 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 | Prioridad | Limitación | Mejora propuesta | Impacto estimado |
 |---|---|---|---|
 | Alta | TF-IDF degrada en texto natural (−43 % F1 entre sintético y Wikipedia) | Reemplazar por embeddings densos (Sentence-BERT) | +15–20 % F1 en textos reales |
-| Alta | $k$ se elige manualmente | Selección automática vía BIC/MDL o salto marginal de cohesión | Elimina el parámetro más crítico |
-| Media | Sobresegmentación sistemática | Penalizar número de segmentos en la función objetivo | Acerca al número real |
 | Completada | SA con hiperparámetros por defecto | Búsqueda por rejilla (grid search) de 27 configs con 30 réplicas (Exp. 5) | Logró +2,8 % de F1 (0,760 → 0,7815) y menor error en SA |
 | Media | Wikipedia sin evaluación LLM | Correr `exp_wikipedia` con `provider: groq` para medir LLM score sobre texto real | Validación semántica del cambio de ranking |
 | Baja | Wikipedia limitado a 28 títulos | Ampliar a categorías completas (e.g. todo "Ciencia") vía API de categorías | Mayor tamaño muestral |
@@ -1061,14 +1094,15 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 
 ### 14.1 Hallazgos principales
 
-1. DP es el mejor algoritmo en datos sintéticos (F1, WindowDiff y LLM Score). Es la elección por defecto cuando el vocabulario está bien separado entre temas.
-2. SA gana en Wikipedia (texto real) en las tres métricas estructurales. Cuando TF-IDF deja de ser un proxy fiable, la exploración estocástica de SA encuentra mejores fronteras que la optimización exacta sobre un objetivo ruidoso.
-3. Greedy es la opción práctica universal: ~10× más rápido que DP y se mantiene cerca del mejor en ambos datasets. Robusta al cambio de dominio.
+1. DP es el mejor algoritmo en datos sintéticos (F1, WindowDiff y LLM Score). Encuentra el óptimo exacto de la función objetivo TF-IDF, lo que lo hace superior cuando el vocabulario está bien separado entre temas.
+2. SA gana en Wikipedia (texto real) en las tres métricas estructurales. Paradójicamente, ser exacto sobre una función objetivo ruidosa (TF-IDF sobre vocabulario natural) es peor que explorar estocásticamente alrededor de ese óptimo incorrecto. La aleatoriedad de SA le permite escapar de mínimos de la función proxy que no corresponden a buenas fronteras humanas.
+3. Greedy es robusto y rápido (~10× más rápido que DP y SA), pero queda segundo o tercero en calidad en ambos datasets. Es una buena opción cuando el tiempo de cómputo es crítico.
 4. El rendimiento absoluto cae ~43 % de sintético a Wikipedia (F1: 0,797 → 0,453). Esto cuantifica el coste de usar TF-IDF en texto natural.
 5. BF y DP coinciden bit a bit en 20/20 instancias del dataset `tiny`, validando empíricamente la correctitud de DP.
 6. El LLM Score y las métricas estructurales coinciden en el ordenamiento sobre el sintético: ambas dan a DP el primer lugar — señal de validez convergente entre dos formas independientes de evaluar.
 7. La función objetivo basada en TF-IDF es razonable en condiciones controladas pero degrada con vocabulario natural: hay margen claro de mejora con embeddings densos.
 8. El análisis de sensibilidad estocástico con 30 réplicas (Experimento 5) demostró la importancia de calibrar los hiperparámetros de SA. Se determinó que una tasa de enfriamiento equilibrada de $\alpha = 0,995$ y una temperatura inicial moderada ($T_0 \le 1,0$) son estadísticamente óptimas, logrando elevar el F1-Boundary promedio de SA de $0,760$ a $0,7815$ y disminuyendo significativamente la varianza de los resultados. Tazas muy rápidas ($\alpha = 0,990$) congelan la solución en óptimos locales, mientras que tasas extremadamente lentas ($\alpha = 0,999$) no permiten estabilizar el proceso.
+9. En uso real, `k` nunca se conoce de antemano: nadie sabe cuántos temas tiene un artículo antes de leerlo. La selección automática mediante el método del codo (Experimento 6) es la única forma de aplicar el sistema a texto arbitrario sin intervención manual. El Experimento 6 confirma que SA + auto-k sigue siendo el mejor en texto natural (F1 = 0,441, Pk = 0,351), y que DP + auto-k es el mejor en sintético (F1 = 0,963, Pk = 0,038).
 
 ### 14.2 Lecciones generales
 
@@ -1077,6 +1111,38 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 - Funciones objetivo proxy importan. Optimizar cohesión TF-IDF es una aproximación gruesa de "buena segmentación humana". La distancia entre proxy y verdad explica por qué DP no alcanza F1 = 1,0 y, sobre todo, por qué cae a 0,45 en texto natural.
 - Los LLMs como evaluadores funcionan, al menos cuando se diseña un prompt restrictivo (escala discreta, salida JSON). Son una alternativa viable a la anotación humana costosa.
 - El patrón de fallback es esencial para sistemas que dependen de APIs externas, sea para LLMs o para descargas masivas como la del dataset Wikipedia (3 artículos saltados por rate-limit persistente sobre 28).
+
+### 14.3 Recomendación práctica: qué algoritmo usar y cómo
+
+Los experimentos miden algoritmos bajo condiciones controladas (mismo `k` para todos, datasets etiquetados). En un escenario real — segmentar un libro, un artículo o una transcripción — dos condiciones cambian de forma fundamental:
+
+1. **El número de segmentos `k` es desconocido.** Nadie sabe cuántos temas tiene un texto antes de analizarlo. Fijar `k = 5` a mano como en los Experimentos 1–4 solo tiene sentido en un benchmark donde el ground truth está disponible; en producción equivale a asumir que todo documento tiene exactamente cinco temas, lo cual raramente es cierto. La única opción razonable es `max_segments: auto` (método del codo, §15.7).
+
+2. **El texto es natural.** Un libro, un artículo académico o una transcripción tienen vocabulario rico con sinónimos y transiciones graduales — exactamente el escenario de Wikipedia, no el sintético.
+
+Dado que en la práctica el texto siempre es natural y `k` siempre es desconocido, **la recomendación por defecto es SA + auto-k**. Los datos del Experimento 6 lo confirman:
+
+| Algoritmo + auto-k | F1 ↑ | Pk ↓ | WindowDiff ↓ |
+|---|---|---|---|
+| **SA** | **0,441** | **0,351** | **0,357** |
+| Greedy | 0,372 | 0,373 | 0,402 |
+| DP | 0,365 | 0,393 | 0,405 |
+
+DP queda último en texto natural aunque sea el algoritmo exacto. La razón es que ser exacto sobre una función objetivo mala (TF-IDF no captura sinónimos ni paráfrasis) es peor que explorar estocásticamente: DP encuentra el óptimo de un proxy incorrecto, mientras que la aleatoriedad de SA le permite escapar de ese óptimo y encontrar fronteras que se alinean mejor con la segmentación humana real.
+
+Los hiperparámetros de SA ya están calibrados por el Experimento 5 (`α = 0,995`, `T₀ = 1,0`, `n_iter = 2000`) — no hay nada que ajustar.
+
+El único caso donde DP es la mejor opción es cuando el texto tiene vocabulario muy disjunto entre temas (corpus técnico muy especializado donde TF-IDF funciona bien). En ese escenario, DP + auto-k alcanza F1 = 0,963 y Pk = 0,038. Si no se sabe de qué tipo es el texto, SA es la apuesta más segura.
+
+**Una nota sobre auto-k y DP:** el método del codo (§15.7) usa DP internamente para barrer la curva J(k). Esto podría hacer pensar que usar DP como algoritmo de segmentación es gratuito — la tabla de DP ya está calculada. Y es cierto: cuando se usa DP + auto-k, el sistema reutiliza esa tabla y no hace ningún cálculo adicional (las fronteras salen del backtracking sobre la misma tabla, O(k·n)). Pero eso no convierte a DP en la mejor opción para texto natural: el barrido de auto-k calcula el óptimo exacto de la función TF-IDF, y ese óptimo sigue siendo subóptimo para texto con vocabulario compartido. SA opera sobre ese mismo `k` pero explora el espacio de fronteras de forma estocástica, encontrando particiones que el proxy TF-IDF considera ligeramente peores pero que las métricas reales premian.
+
+| Situación | Recomendación |
+|---|---|
+| Texto natural (caso habitual: libros, artículos, transcripciones) | **SA + auto-k** con `α=0,995`, `T₀=1,0`, `n_iter=2000` |
+| Texto con vocabulario muy disjunto entre temas (corpus técnico especializado) | **DP + auto-k** — exacto y eficiente, una sola pasada |
+| Velocidad prioritaria sobre calidad | **Greedy + auto-k** — el barrido de auto-k domina el tiempo total, Greedy añade solo ~3 ms |
+
+En todos los casos, **auto-k no es opcional**: es lo que hace el sistema aplicable a texto arbitrario. Sin él, el usuario necesita conocer de antemano cuántos temas tiene el texto — información que el sistema debería revelar, no presuponer.
 
 ---
 
@@ -1207,6 +1273,11 @@ python -m src.experiments.runner --config config/experiments/exp_wikipedia.yaml
 # (grid 3×3×3 × 30 semillas × 20 docs = 16 200 corridas; ~10–15 min)
 # A diferencia de los anteriores, no usa YAML: el grid está definido en el script.
 python -m src.experiments.sa_sensitivity
+
+# Experimento 6: selección automática de k (método del codo, sin LLM)
+# Contraparte de los Exp. 1 y 4, pero con `max_segments: auto` en vez de k=5 fijo.
+python -m src.experiments.runner --config config/experiments/exp_auto_k_small.yaml
+python -m src.experiments.runner --config config/experiments/exp_auto_k.yaml
 ```
 
 Los experimentos 1–4 generan tres archivos en `results/<experiment_id>/`:
@@ -1240,7 +1311,7 @@ Si el algoritmo elegido tiene hiperparámetros relevantes (`window_size` para gr
 
 La función objetivo $J(k) = \sum_i |S_i|\,\overline{\cos}(S_i)$ crece monótonamente con `k` (en el extremo, `k = n` da cohesión trivialmente perfecta). Por eso no se puede elegir `k` simplemente maximizando $J$. El demo aplica la **heurística del codo (Kneedle, Satopaa et al. 2011)** sobre la curva del objetivo óptimo de la DP:
 
-1. Para cada `k ∈ [2, k_max]` con `k_max = min(n − 1, max(5, n/2))`, se corre DP exacto y se calcula $J(k)$.
+1. Se ejecuta **un único barrido de DP** hasta `k_max = min(n − 1, max(5, ⌈√n⌉))`, obteniendo $J(k)$ para todos los `k ∈ [2, k_max]` en una sola pasada de $O(n^2 \cdot k_{\max})$ operaciones. Con el límite $\sqrt{n}$, esto es $O(n^2 \cdot \sqrt{n}) = O(n^{2{,}5})$ en total — más eficiente que dejar crecer $k$ sin cota ($O(n^3)$ si $k_\max = n$). El límite $\sqrt{n}$ tiene además una justificación geométrica: si hay $k$ segmentos, el tamaño promedio de cada uno es $n/k$ oraciones. El punto donde el número de segmentos iguala al tamaño promedio es $k = n/k \Rightarrow k^2 = n \Rightarrow k = \sqrt{n}$. Por encima de ese punto los segmentos tienen de promedio menos oraciones que el número de segmentos que hay, señal de fragmentación excesiva; además TF-IDF se vuelve poco fiable en segmentos muy cortos. En la práctica se añade un piso de 5 para documentos pequeños ($n < 25$) donde $\sqrt{n} < 5$ y el rango $[2, \sqrt{n}]$ sería demasiado estrecho para detectar un codo.
 2. Se normalizan los ejes a $[0, 1]$: $\tilde{x}_k = (k - k_\min) / (k_\max - k_\min)$, $\tilde{y}_k = (J(k) - J_\min) / (J_\max - J_\min)$.
 3. Se elige el `k` que maximiza $\tilde{y}_k - \tilde{x}_k$ — el punto de máxima distancia vertical entre la curva (cóncava) y la diagonal que une sus extremos.
 
@@ -1250,10 +1321,14 @@ Intuitivamente: busca el punto donde añadir un segmento más deja de aportar ga
 k=2  J=0.0396
 k=3  J=0.0500  ← elegido
 k=4  J=0.0500
-k=5  J=0.0500
+k=5  J=0.0489
 ```
 
-La implementación vive en [`src/algorithms/auto_k.py`](src/algorithms/auto_k.py), es reutilizable desde el runner experimental y siempre usa DP internamente para barrer la curva (porque DP es exacto y eficiente; los demás algoritmos usan el `k` ya elegido).
+La implementación vive en [`src/algorithms/auto_k.py`](src/algorithms/auto_k.py). Usa DP internamente porque DP es el único algoritmo que calcula el valor óptimo de J(k) de forma exacta para cada k — Greedy y SA solo aproximan ese valor, así que sus curvas J(k) no serían fiables para detectar el codo. Importante: el barrido de auto-k no solo calcula los valores J(k) sino que en la misma pasada guarda la tabla de backtracking, de modo que las fronteras óptimas para el k elegido ya están disponibles sin ningún cálculo adicional.
+
+Esto no significa que DP sea el mejor algoritmo de segmentación una vez elegido k. En texto natural (vocabulario rico, sinónimos, transiciones graduales), DP encuentra el óptimo exacto de una función objetivo imperfecta (TF-IDF) y ese óptimo no corresponde a las fronteras humanas reales. SA, al explorar el espacio estocásticamente, escapa de ese óptimo incorrecto y produce mejores segmentaciones. El k lo determina auto-k (con DP, que es la herramienta correcta para eso); las fronteras las determina SA (que es la herramienta correcta para texto natural). Véase §14.3 para la recomendación completa.
+
+La misma lógica está disponible en el runner experimental mediante `max_segments: auto` en el YAML: el runner calcula el `k` una sola vez por documento y lo pasa a todos los algoritmos configurados, garantizando comparación justa entre ellos (ver Experimento 6, §11.8).
 
 Tras mostrar el resultado, ofrece un menú para **probar otro algoritmo sobre el mismo texto**, **cambiar k**, **cargar otro texto** o **salir**. Así se puede comparar visualmente cómo difieren los cuatro algoritmos sobre un mismo párrafo sin reescribir comandos.
 

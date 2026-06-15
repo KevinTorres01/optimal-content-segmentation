@@ -1,0 +1,31 @@
+experiment_id: exp_auto_k_small
+description: "Automatic k selection (elbow method) on the synthetic small dataset — counterpart to exp_compare_algorithms with fixed k=5; small has genuine k variation (3/4/5), so it isolates how well auto-k recovers the true number of segments"
+
+dataset:
+  path: data/small/
+
+algorithms:
+  - name: dynamic_programming
+    params:
+      max_segments: auto
+  - name: greedy
+    params:
+      max_segments: auto
+      window_size: 2
+  - name: simulated_annealing
+    params:
+      max_segments: auto
+      n_iterations: 2000
+      cooling_rate: 0.995
+      random_seed: 42
+
+llm_evaluator:
+  provider: none
+
+evaluation:
+  metrics: [windowdiff, pk, f1_boundary, runtime_seconds]
+  random_seed: 42
+
+output:
+  path: results/exp_auto_k_small/
+  save_raw: true
