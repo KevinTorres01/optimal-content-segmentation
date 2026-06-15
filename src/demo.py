@@ -373,7 +373,10 @@ def run_one_shot(console: Console, args: argparse.Namespace) -> int:
 
     max_segments = args.max_segments
     if max_segments == "auto":
-        auto = find_optimal_k(document)
+        # Forward the chosen cohesion backend so auto-k's DP sweep uses the same
+        # sentence representation the segmenter does (default TF-IDF otherwise).
+        cohesion_backend = dict(args.param).get("cohesion_backend", "tfidf")
+        auto = find_optimal_k(document, cohesion_backend=cohesion_backend)
         _print_auto_k_curve(console, auto)
         # Reuse boundaries from the auto-k sweep when DP is the chosen algorithm —
         # they were computed in the same pass, so no second triple-loop needed.

@@ -131,7 +131,7 @@ def run_experiment(config_path: Path) -> None:
     # dataset concentrates accumulated throttling on whichever algorithm runs
     # last (typically SA), biasing its LLM score. Interleaving distributes that
     # pressure uniformly across algorithms.
-    prepared: list[tuple[str, Any, int | str | None]] = []
+    prepared: list[tuple[str, Any, int | str | None, str]] = []
     for algo_config in config.algorithms:
         algo_cls = ALGORITHM_REGISTRY.get(algo_config.name)
         if algo_cls is None:
@@ -143,6 +143,10 @@ def run_experiment(config_path: Path) -> None:
 
         params = dict(algo_config.params)
         max_segments = _normalize_max_segments(params.pop("max_segments", None))
+        # The cohesion backend also drives the auto-k DP sweep, so capture it here
+        # to forward it to find_optimal_k (otherwise auto-k would silently use
+        # TF-IDF while the algorithm segments with a different representation).
+        cohesion_backend = params.get("cohesion_backend", "tfidf")
         # Default any unset random_seed to the experiment-wide seed so SA (and any
         # future stochastic algorithm) stays reproducible even when the YAML omits it.
         constructor_params = inspect.signature(algo_cls).parameters
@@ -153,7 +157,7 @@ def run_experiment(config_path: Path) -> None:
         except TypeError as exc:
             console.print(f"[red]Invalid params for {algo_config.name}: {exc}[/]")
             continue
-        prepared.append((algo_config.name, algorithm, max_segments))
+        prepared.append((algo_config.name, algorithm, max_segments, cohesion_backend))
 
     console.print(
         f"\nRunning {len(prepared)} algorithms interleaved over "
@@ -168,17 +172,22 @@ def run_experiment(config_path: Path) -> None:
         task = progress.add_task("Segmenting...", total=len(dataset) * len(prepared))
 
         for document, gt_boundaries in dataset:
-            # Auto-k is a document-level decision based on the algorithm-agnostic
-            # DP cohesion curve, so compute it once per document and share it
-            # across every algorithm that requested it. This keeps the comparison
-            # fair (all algorithms target the same k) and avoids re-running the DP
-            # sweep once per algorithm.
-            auto_k_result = None
-            for algo_name, algorithm, max_segments in prepared:
+            # Auto-k is a document-level decision based on the DP cohesion curve,
+            # which depends on the cohesion backend. Compute it once per (document,
+            # backend) and share across algorithms using the same representation:
+            # this keeps the comparison fair (algorithms with the same backend
+            # target the same k) while still honouring a different backend if one
+            # algorithm requests it, and avoids re-running the DP sweep needlessly.
+            auto_k_cache: dict[str, Any] = {}
+            for algo_name, algorithm, max_segments, cohesion_backend in prepared:
                 effective_k: int | None
                 if isinstance(max_segments, str):  # the "auto" sentinel
+                    auto_k_result = auto_k_cache.get(cohesion_backend)
                     if auto_k_result is None:
-                        auto_k_result = find_optimal_k(document)
+                        auto_k_result = find_optimal_k(
+                            document, cohesion_backend=cohesion_backend
+                        )
+                        auto_k_cache[cohesion_backend] = auto_k_result
                     effective_k = auto_k_result.k
                     # DP boundaries were already computed during the auto-k sweep
                     # (the split matrix is stored in one pass). Reuse them directly
@@ -263,7 +272,7 @@ def run_experiment(config_path: Path) -> None:
         "random_seed": config.evaluation.random_seed,
         "n_documents": len(dataset),
         "algorithms": [a.name for a in config.algorithms],
-        "max_segments": {name: ms for name, _, ms in prepared},
+        "max_segments": {name: ms for name, _, ms, _ in prepared},
         "llm_provider": config.llm_evaluator.provider,
         "config_path": str(config_path),
     }

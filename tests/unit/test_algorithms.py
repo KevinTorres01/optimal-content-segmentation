@@ -7,7 +7,6 @@ from src.algorithms.greedy import GreedySegmenter
 from src.algorithms.simulated_annealing import SASegmenter
 from src.core.models import Document, SegmentationResult
 
-
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
 

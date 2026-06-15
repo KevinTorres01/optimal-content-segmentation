@@ -3,8 +3,8 @@ from __future__ import annotations
 from time import time
 
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
 
+from src.algorithms._cohesion import embed_sentences
 from src.core.interfaces import BaseSegmenter
 from src.core.models import Document, SegmentationResult
 
@@ -20,8 +20,9 @@ class GreedySegmenter(BaseSegmenter):
     Time complexity: O(n * w) where w is the window size.
     """
 
-    def __init__(self, window_size: int = 2) -> None:
+    def __init__(self, window_size: int = 2, cohesion_backend: str = "tfidf") -> None:
         self._window_size = window_size
+        self._cohesion_backend = cohesion_backend
 
     @property
     def name(self) -> str:
@@ -51,10 +52,9 @@ class GreedySegmenter(BaseSegmenter):
                 runtime_seconds=time() - start,
             )
 
-        vectorizer = TfidfVectorizer(min_df=1, sublinear_tf=True)
-        tfidf = vectorizer.fit_transform(document.sentences).toarray()
+        vectors = embed_sentences(document.sentences, backend=self._cohesion_backend)
 
-        gap_sims = self._block_similarities(tfidf, n)
+        gap_sims = self._block_similarities(vectors, n)
         depth = self._depth_scores(gap_sims)
 
         n_splits = k - 1
@@ -71,13 +71,13 @@ class GreedySegmenter(BaseSegmenter):
             runtime_seconds=time() - start,
         )
 
-    def _block_similarities(self, tfidf: np.ndarray, n: int) -> list[float]:
+    def _block_similarities(self, vectors: np.ndarray, n: int) -> list[float]:
         """Cosine similarity between left and right window vectors at each gap."""
         w = self._window_size
         sims: list[float] = []
         for gap in range(n - 1):
-            left_vec = tfidf[max(0, gap - w + 1) : gap + 1].mean(axis=0)
-            right_vec = tfidf[gap + 1 : min(n, gap + 1 + w)].mean(axis=0)
+            left_vec = vectors[max(0, gap - w + 1) : gap + 1].mean(axis=0)
+            right_vec = vectors[gap + 1 : min(n, gap + 1 + w)].mean(axis=0)
             denom = np.linalg.norm(left_vec) * np.linalg.norm(right_vec)
             sims.append(
                 float(np.dot(left_vec, right_vec) / denom) if denom > 1e-10 else 0.0

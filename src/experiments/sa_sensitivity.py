@@ -29,7 +29,6 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
-from src.algorithms._cohesion import build_cohesion_matrix
 from src.algorithms.simulated_annealing import SASegmenter
 from src.core.models import Document
 from src.evaluation.metrics import (
@@ -56,13 +55,25 @@ console = Console()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def t_critical_95(n: int) -> float:
     """Valor crítico t para IC 95 % con n-1 grados de libertad (aproximación)."""
     # Tabla simplificada; para n >= 30 ≈ 2.045, para n < 30 usamos valores estándar
     t_table = {
-        1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
-        6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
-        15: 2.131, 20: 2.086, 25: 2.060, 29: 2.045,
+        1: 12.706,
+        2: 4.303,
+        3: 3.182,
+        4: 2.776,
+        5: 2.571,
+        6: 2.447,
+        7: 2.365,
+        8: 2.306,
+        9: 2.262,
+        10: 2.228,
+        15: 2.131,
+        20: 2.086,
+        25: 2.060,
+        29: 2.045,
     }
     df = n - 1
     if df <= 0:
@@ -104,12 +115,15 @@ def load_dataset(path: Path) -> list[tuple[Document, list[int]]]:
 
 # ── Núcleo del experimento ────────────────────────────────────────────────────
 
+
 def run_sensitivity() -> None:
     OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 
     console.rule("[bold blue]Análisis de Sensibilidad — Recocido Simulado")
-    console.print(f"  Grid: {len(T0_VALUES)}×{len(ALPHA_VALUES)}×{len(N_ITER_VALUES)} = "
-                  f"{len(T0_VALUES)*len(ALPHA_VALUES)*len(N_ITER_VALUES)} configuraciones")
+    console.print(
+        f"  Grid: {len(T0_VALUES)}×{len(ALPHA_VALUES)}×{len(N_ITER_VALUES)} = "
+        f"{len(T0_VALUES)*len(ALPHA_VALUES)*len(N_ITER_VALUES)} configuraciones"
+    )
     console.print(f"  Réplicas por configuración: {N_SEEDS} semillas")
     console.print(f"  Dataset: {DATASET_PATH}\n")
 
@@ -150,18 +164,20 @@ def run_sensitivity() -> None:
                     wd = compute_window_diff(gt_boundaries, result.boundaries, n)
                     _, _, f1 = compute_f1_boundary(gt_boundaries, result.boundaries)
 
-                    raw_results.append({
-                        "t0": t0,
-                        "alpha": alpha,
-                        "n_iter": n_iter,
-                        "config_label": config_label,
-                        "seed": seed,
-                        "doc_id": document.doc_id,
-                        "pk": round(pk, 4),
-                        "windowdiff": round(wd, 4),
-                        "f1_boundary": round(f1, 4),
-                        "runtime_seconds": round(runtime, 6),
-                    })
+                    raw_results.append(
+                        {
+                            "t0": t0,
+                            "alpha": alpha,
+                            "n_iter": n_iter,
+                            "config_label": config_label,
+                            "seed": seed,
+                            "doc_id": document.doc_id,
+                            "pk": round(pk, 4),
+                            "windowdiff": round(wd, 4),
+                            "f1_boundary": round(f1, 4),
+                            "runtime_seconds": round(runtime, 6),
+                        }
+                    )
                     progress.advance(task)
 
     # ── Guardar raw ───────────────────────────────────────────────────────────
@@ -174,6 +190,7 @@ def run_sensitivity() -> None:
     # ── Agregar por configuración ─────────────────────────────────────────────
     # Agrupamos: para cada config, promediamos sobre todos los documentos y semillas
     from collections import defaultdict
+
     grouped: dict[tuple, list[dict]] = defaultdict(list)
     for r in raw_results:
         key = (r["t0"], r["alpha"], r["n_iter"])
@@ -191,28 +208,31 @@ def run_sensitivity() -> None:
         f1_mean, f1_ci = confidence_interval_95(f1s)
         rt_mean, rt_ci = confidence_interval_95(rts)
 
-        summary_rows.append({
-            "t0": t0,
-            "alpha": alpha,
-            "n_iter": n_iter,
-            "config_label": f"T0={t0} α={alpha} iter={n_iter}",
-            "n_replicas": len(SEEDS),
-            "n_observations": len(rows),
-            "pk_mean": round(pk_mean, 4),
-            "pk_ci95": round(pk_ci, 4),
-            "windowdiff_mean": round(wd_mean, 4),
-            "windowdiff_ci95": round(wd_ci, 4),
-            "f1_mean": round(f1_mean, 4),
-            "f1_ci95": round(f1_ci, 4),
-            "runtime_mean_ms": round(rt_mean * 1000, 3),
-            "runtime_ci95_ms": round(rt_ci * 1000, 3),
-        })
+        summary_rows.append(
+            {
+                "t0": t0,
+                "alpha": alpha,
+                "n_iter": n_iter,
+                "config_label": f"T0={t0} α={alpha} iter={n_iter}",
+                "n_replicas": len(SEEDS),
+                "n_observations": len(rows),
+                "pk_mean": round(pk_mean, 4),
+                "pk_ci95": round(pk_ci, 4),
+                "windowdiff_mean": round(wd_mean, 4),
+                "windowdiff_ci95": round(wd_ci, 4),
+                "f1_mean": round(f1_mean, 4),
+                "f1_ci95": round(f1_ci, 4),
+                "runtime_mean_ms": round(rt_mean * 1000, 3),
+                "runtime_ci95_ms": round(rt_ci * 1000, 3),
+            }
+        )
 
     # Ordenar por F1 descendente
     summary_rows.sort(key=lambda x: x["f1_mean"], reverse=True)
 
     # Guardar CSV
     import csv
+
     summary_path = OUTPUT_PATH / "summary.csv"
     fieldnames = list(summary_rows[0].keys())
     with open(summary_path, "w", newline="", encoding="utf-8") as f:
@@ -224,7 +244,9 @@ def run_sensitivity() -> None:
     # Guardar mejor configuración
     best = summary_rows[0]
     best_path = OUTPUT_PATH / "best_config.json"
-    best_path.write_text(json.dumps(best, indent=2, ensure_ascii=False), encoding="utf-8")
+    best_path.write_text(
+        json.dumps(best, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     console.print(f"[green]✓ Best config → {best_path}")
 
     # ── Imprimir tabla resumen (top 10) ───────────────────────────────────────
@@ -257,9 +279,11 @@ def run_sensitivity() -> None:
 
     console.print()
     console.print(table)
-    console.print(f"\n[bold green]Mejor configuración:[/] "
-                  f"T₀={best['t0']}, α={best['alpha']}, iter={best['n_iter']} "
-                  f"→ F1={best['f1_mean']:.4f} ± {best['f1_ci95']:.4f}")
+    console.print(
+        f"\n[bold green]Mejor configuración:[/] "
+        f"T₀={best['t0']}, α={best['alpha']}, iter={best['n_iter']} "
+        f"→ F1={best['f1_mean']:.4f} ± {best['f1_ci95']:.4f}"
+    )
     console.print(f"\n[green]✓ Todos los resultados guardados en {OUTPUT_PATH}")
 
 

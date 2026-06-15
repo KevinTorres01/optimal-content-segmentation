@@ -12,6 +12,11 @@ scikit-learn>=1.3
 numpy>=1.24
 pandas>=2.0
 
+# Embeddings densos — backend de cohesión opcional 'sbert' (corre local, sin API).
+# Solo se importa si un experimento usa cohesion_backend: sbert; el default TF-IDF
+# no lo necesita.
+sentence-transformers>=2.2    # opcional: backend de cohesión semántica
+
 # Utilidades
 rich>=13.0
 requests>=2.31      # cliente HTTP para el loader de Wikipedia

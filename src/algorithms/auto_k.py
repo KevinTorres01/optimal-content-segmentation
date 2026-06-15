@@ -91,6 +91,7 @@ def find_optimal_k(
     document: Document,
     k_min: int = 2,
     k_max: int | None = None,
+    cohesion_backend: str = "tfidf",
 ) -> AutoKResult:
     """Pick k automatically using the elbow method on the DP-optimal objective.
 
@@ -111,6 +112,8 @@ def find_optimal_k(
             becomes unreliable on very short segments. The max(5, …) floor is
             a practical guard for short documents (n < 25) where √n < 5 and
             the range [2, √n] would be too narrow for elbow detection.
+        cohesion_backend: Sentence representation backend forwarded to
+            :func:`build_cohesion_matrix` (``"tfidf"`` default or ``"sbert"``).
 
     Returns:
         AutoKResult with the chosen k, the full {k: J(k)} curve, a short
@@ -135,7 +138,7 @@ def find_optimal_k(
     k_min = max(2, min(k_min, k_max))
 
     if k_min == k_max:
-        cohesion = build_cohesion_matrix(document.sentences)
+        cohesion = build_cohesion_matrix(document.sentences, backend=cohesion_backend)
         _, split = _dp_sweep(cohesion, n, k_max)
         boundaries = _backtrack(split, n, k_min)
         return AutoKResult(
@@ -145,7 +148,7 @@ def find_optimal_k(
             boundaries=boundaries,
         )
 
-    cohesion = build_cohesion_matrix(document.sentences)
+    cohesion = build_cohesion_matrix(document.sentences, backend=cohesion_backend)
     full, split = _dp_sweep(cohesion, n, k_max)
     objectives = {k: full[k] for k in range(k_min, k_max + 1) if k in full}
 

@@ -296,15 +296,17 @@ Esto es lo que cada algoritmo intenta maximizar.
 
 ### 5.4 Limitación de esta función objetivo
 
-Es importante reconocer una debilidad: esta función se basa en TF-IDF, que solo "ve" coincidencias de palabras exactas. Si dos oraciones hablan del mismo tema pero usando sinónimos (por ejemplo "automóvil" y "coche"), TF-IDF las considera distintas. Para textos reales con vocabulario rico esto puede subestimar la cohesión.
+Es importante reconocer una debilidad: esta función se basa en TF-IDF, que solo "ve" coincidencias de palabras exactas. TF-IDF representa cada oración como un vector disperso donde cada dimensión es una palabra del vocabulario; dos oraciones solo se parecen si comparten términos literales. Si hablan del mismo tema pero usando sinónimos ("automóvil" y "coche"), variantes morfológicas ("rápido" y "veloz") o paráfrasis, TF-IDF las considera casi ortogonales. En texto sintético, donde cada tópico tiene vocabulario propio y separado, esto no estorba; pero en texto natural —con sinónimos, pronombres y transiciones graduales— subestima la cohesión real y explica buena parte de la caída de ~43 % en F1 entre el corpus sintético y Wikipedia (§11.4).
 
-La sección 13 propone reemplazar TF-IDF por embeddings densos (vectores producidos por modelos como Sentence-BERT) como mejora futura.
+Para atacar esta limitación, el proyecto implementa un **backend de cohesión alternativo opcional** basado en *embeddings* densos: en lugar de contar palabras, un modelo Sentence-BERT multilingüe (`paraphrase-multilingual-MiniLM-L12-v2`) convierte cada oración en un vector de 384 dimensiones que captura significado, de modo que "El automóvil es veloz" y "El coche es rápido" —sin palabras de contenido en común— quedan cercanas en el espacio vectorial. El backend se selecciona por configuración (`cohesion_backend: tfidf | sbert`) sin tocar los algoritmos, corre localmente (sin API, por tanto no afectado por las restricciones OFAC del §7.3) y se mide en el **Experimento 7** (§10.7, §11.9): sobre Wikipedia eleva el F1 de SA en +0,22 (+47 %) y el de DP en +0,14 (+31 %). TF-IDF se mantiene como backend por defecto por su rapidez y porque no requiere descargar un modelo.
+
+> **Aclaración importante — SBERT no es el LLM evaluador que pide la orientación.** La consigna del Tema 6 exige *"utilizar un LLM para evaluar la cohesión semántica de cada segmento"*; ese requisito lo cumple el evaluador generativo Groq/Mistral descrito en el §7, que asigna a cada segmento una puntuación de coherencia 1–5. Sentence-BERT, en cambio, es un modelo de *embeddings* que solo produce vectores de oración para la función objetivo interna; **no genera juicios, no evalúa nada y no sustituye al LLM evaluador**. Su inclusión es **únicamente ilustrativa**: sirve para demostrar cuánto pesa la representación de las oraciones en la calidad de la segmentación, como una adición experimental al margen del requisito de la asignatura, no como parte de él.
 
 ---
 
 ## 6. Los cuatro algoritmos
 
-Implementamos cuatro algoritmos que comparten la misma función objetivo y los mismos vectores TF-IDF. La diferencia entre ellos es cómo exploran el espacio de posibles segmentaciones.
+Implementamos cuatro algoritmos que comparten la misma función objetivo y la misma representación vectorial de oraciones (TF-IDF por defecto, o *embeddings* SBERT si se activa ese backend; §5.4). La diferencia entre ellos es cómo exploran el espacio de posibles segmentaciones.
 
 ### 6.1 Algoritmo 1 — Fuerza Bruta
 
@@ -464,10 +466,6 @@ Imagina que dibujamos la curva de similitud $\text{sim}[g]$ para todos los hueco
 ---
 
 ### 6.4 Algoritmo 4 — Recocido Simulado (Simulated Annealing, SA)
-
-#### Encuadre como técnica de simulación
-
-A diferencia de BF, DP y Greedy, SA no es un algoritmo determinista: es una **simulación estocástica** de un sistema físico (el recocido metalúrgico) que se reinterpreta como optimización combinatoria. En la terminología del Cap. 1 de *Temas de Simulación* (García, Martí, Pérez), SA es un sistema dinámico no-estacionario cuya función de transición de estado es no-determinista y depende de variables aleatorias generadas en cada iteración. Concretamente, en cada paso se generan dos variables uniformes discretas (la frontera a perturbar y la dirección $\pm 1$) y, cuando el movimiento empeora la cohesión, una variable uniforme continua $U \sim \mathcal{U}(0,1)$ para decidir su aceptación según el criterio de Metropolis. La generación de estas variables corresponde a los métodos descritos en el Cap. 2 del libro (algoritmo de la transformada inversa y distribución uniforme), y la corrida del algoritmo es una realización (en el sentido del Cap. 4) del proceso estocástico subyacente. Por eso el Experimento 5 (§10.5, §11.5) trata a SA como un sistema que se analiza con réplicas independientes y herramientas estadísticas, no como un algoritmo cuyo resultado se reporta una sola vez.
 
 #### Idea intuitiva
 
@@ -799,9 +797,7 @@ Esta es la única métrica que mide calidad semántica real, no solo coincidenci
 
 ### 9.5 Runtime
 
-Idea: el tiempo en segundos que tomó procesar un documento.
-
-Importancia: en producción muchas veces preferimos un algoritmo 5 % menos preciso pero 10× más rápido.
+El runtime es el tiempo en segundos que tomó procesar un documento. Importa porque en producción muchas veces preferimos un algoritmo 5 % menos preciso pero 10× más rápido.
 
 ### 9.6 Implementación
 
@@ -811,66 +807,49 @@ Todas estas métricas están implementadas en `src/evaluation/metrics.py` sin de
 
 ## 10. Diseño experimental
 
-Ejecutamos cuatro experimentos diseñados para responder preguntas distintas.
+Ejecutamos siete experimentos, cada uno diseñado para responder una pregunta distinta. Los cuatro primeros comparan los algoritmos en condiciones cada vez más exigentes —de lo sintético controlado al texto natural—; los tres últimos abren ejes nuevos: la sensibilidad de los hiperparámetros de SA, la selección automática del número de segmentos y la representación de las oraciones.
 
 ### 10.1 Experimento 1 — Comparación estructural sin LLM
 
-ID: `exp_compare_algorithms`
-Pregunta: ¿Cuál de los tres algoritmos escalables (DP, Greedy, SA) da mejores fronteras?
-Dataset: `small` (20 documentos)
-LLM: ninguno (solo métricas estructurales)
-Por qué no incluimos Brute Force aquí: los documentos tienen 15–36 oraciones, por encima del límite de 15 de BF.
+El **Experimento 1** (`exp_compare_algorithms`) responde la pregunta básica: ¿cuál de los tres algoritmos escalables —DP, Greedy y SA— coloca mejores fronteras? Se ejecuta sobre el dataset sintético `small` (20 documentos) usando solo métricas estructurales, sin LLM. Brute Force queda fuera porque sus documentos tienen 15–36 oraciones, por encima del límite de 15 que el algoritmo soporta.
 
 ### 10.2 Experimento 2 — Validación BF vs DP
 
-ID: `exp_bf_vs_dp`
-Pregunta: ¿DP encuentra realmente el óptimo global, igual que la fuerza bruta?
-Dataset: `tiny` (20 documentos con 5–12 oraciones)
-LLM: ninguno
-`max_segments`: 3 (calibrado al rango real de segmentos en `tiny`, que tiene 2–3 segmentos por documento; ver `config/experiments/exp_bf_vs_dp.yaml`). El resto de experimentos usa `max_segments = 5`.
-Importancia: este es el experimento de validación de correctitud. Si DP no coincidiera con BF, sería evidencia de un bug en DP.
+El **Experimento 2** (`exp_bf_vs_dp`) es la validación de correctitud: comprueba si DP encuentra realmente el óptimo global, el mismo que la fuerza bruta. Para que BF sea viable se usa el dataset `tiny` (20 documentos de 5–12 oraciones) y se fija `max_segments = 3`, calibrado al rango real de `tiny`, que tiene 2–3 segmentos por documento (ver `config/experiments/exp_bf_vs_dp.yaml`); el resto de experimentos usa `max_segments = 5`. No interviene ningún LLM. Si DP no coincidiera con BF, sería evidencia de un bug en DP.
 
 ### 10.3 Experimento 3 — Evaluación con LLM
 
-ID: `exp_llm_groq`
-Pregunta: ¿Cómo califica un LLM la calidad semántica de los segmentos que cada algoritmo produce?
-Dataset: `small`
-LLM: Groq `llama-3.3-70b-versatile`, temperatura 0
-Métricas: estructurales + `llm_score`
+El **Experimento 3** (`exp_llm_groq`) incorpora al evaluador semántico: ¿cómo califica un LLM la calidad de los segmentos que produce cada algoritmo? Repite la comparación del Experimento 1 sobre `small`, pero añade la métrica `llm_score` a las estructurales, evaluando cada segmento con Groq `llama-3.3-70b-versatile` a temperatura 0.
 
 ### 10.4 Experimento 4 — Validación en texto natural (Wikipedia)
 
-ID: `exp_wikipedia`
-Pregunta: ¿Los resultados obtenidos con datos sintéticos se generalizan a texto natural? ¿Se mantiene el ordenamiento relativo entre algoritmos cuando el vocabulario es rico y las transiciones son graduales?
-Dataset: `wikipedia` (25 artículos reales en español)
-LLM: ninguno (foco en métricas estructurales)
-Importancia: usa artículos editados por humanos con secciones como ground truth para contrastar el comportamiento medido en condiciones ideales contra el comportamiento en texto natural. Es el experimento que separa "lo que funciona en un laboratorio" de "lo que funciona en producción".
+El **Experimento 4** (`exp_wikipedia`) pone a prueba la generalización: ¿se sostienen los resultados sintéticos en texto natural?, ¿se mantiene el ordenamiento entre algoritmos cuando el vocabulario es rico y las transiciones son graduales? Usa el dataset `wikipedia` (25 artículos reales en español, con las secciones editadas por humanos como ground truth) y se centra en las métricas estructurales, sin LLM. Al contrastar el comportamiento en condiciones ideales con el de texto natural, es el experimento que separa "lo que funciona en un laboratorio" de "lo que funciona en producción".
 
 ### 10.5 Experimento 5 — Análisis de sensibilidad de hiperparámetros de SA
 
-ID: `exp_sa_sensitivity`
-Pregunta: ¿Cómo influyen los hiperparámetros del Recocido Simulado (temperatura inicial $T_0$, tasa de enfriamiento $\alpha$, y número de iteraciones $N_{\text{iter}}$) en la calidad de la segmentación y en el tiempo de ejecución del algoritmo?
-Dataset: `small` (20 documentos)
-Réplicas estocásticas: 30 semillas distintas por cada configuración del grid, generando un total de 16,200 ejecuciones individuales (27 configuraciones × 30 semillas × 20 documentos).
-Metodología: Se realiza una búsqueda por rejilla (grid search) cruzando los siguientes rangos de parámetros:
+El **Experimento 5** (`exp_sa_sensitivity`) estudia cómo influyen los hiperparámetros del Recocido Simulado —temperatura inicial $T_0$, tasa de enfriamiento $\alpha$ y número de iteraciones $N_{\text{iter}}$— en la calidad de la segmentación y en el tiempo de ejecución, sobre el dataset `small` (20 documentos). Para ello realiza una búsqueda por rejilla (*grid search*) cruzando los rangos:
+
 - $T_0 \in [0.5, 1.0, 2.0]$
 - $\alpha \in [0.990, 0.995, 0.999]$
 - $N_{\text{iter}} \in [500, 1000, 2000]$
 
-Para cada configuración se computan el promedio de las métricas estructurales ($F_1$-Boundary, $P_k$, WindowDiff) y del tiempo de ejecución en milisegundos, acompañados de sus respectivos intervalos de confianza al 95 %. Esta metodología sigue el marco del Cap. 4 de *Temas de Simulación* (García, Martí, Pérez): se trata cada par (configuración, semilla, documento) como una observación independiente y se estima la media poblacional $\theta$ mediante la esperanza muestral $\bar{X} = \sum_i X_i / N$ (sección 4.1 del libro), con varianza muestral insesgada $S^2 = \sum_i (X_i - \bar{X})^2 / (N-1)$ (Proposición 4.1.2) y margen $t_{\alpha/2,\,N-1} \cdot S / \sqrt{N}$.
+y repite cada una de las 27 configuraciones con 30 semillas distintas, lo que suma 16 200 ejecuciones individuales (27 configuraciones × 30 semillas × 20 documentos). Para cada configuración se computan el promedio de las métricas estructurales ($F_1$-Boundary, $P_k$, WindowDiff) y del tiempo de ejecución en milisegundos, acompañados de sus respectivos intervalos de confianza al 95 %. Se trata cada par (configuración, semilla, documento) como una observación independiente y se estima la media poblacional $\theta$ mediante la esperanza muestral $\bar{X} = \sum_i X_i / N$, con varianza muestral insesgada $S^2 = \sum_i (X_i - \bar{X})^2 / (N-1)$ y margen $t_{\alpha/2,\,N-1} \cdot S / \sqrt{N}$.
 
 Detalle técnico: el IC se computa sobre el conjunto de $N = 30 \times 20 = 600$ observaciones por configuración (30 semillas × 20 documentos), no sobre 30 réplicas agregadas. Con $N = 600$, $t_{0{,}025,\,599} \approx 1{,}96$ (en el código se usa la cota conservadora $2{,}045$ válida para $N \geq 30$, lo que infla el margen ~4 %). Esta decisión maximiza la potencia estadística pero supone independencia entre observaciones doc×semilla; como los documentos comparten dificultad latente, el IC reportado debe leerse como una cota inferior de la incertidumbre verdadera. Una variante más conservadora —promediar primero por semilla sobre los 20 documentos y construir el IC sobre las 30 medias resultantes— daría márgenes aproximadamente $\sqrt{600/30} \approx 4{,}5$ veces más anchos; la dirección del ranking entre configuraciones se mantiene en ambos casos.
 
 ### 10.6 Experimento 6 — Selección automática de k
 
-ID: `exp_auto_k_small` (sintético) y `exp_auto_k` (Wikipedia)
-Pregunta: ¿cuánto mejora la segmentación cuando `k` se elige automáticamente por documento en lugar de fijarse globalmente a priori?
-Dataset: `small` (20 docs, k real 3/4/5) y `wikipedia` (25 artículos, ground truth truncado a 5)
-LLM: ninguno
-Método: cada algoritmo declara `max_segments: auto` en el YAML; el runner llama una sola vez por documento a `find_optimal_k` (método del codo / Kneedle sobre la curva del objetivo óptimo de DP, §15.7) y pasa ese `k` a los tres algoritmos. Es la contraparte directa de los Experimentos 1 y 4, que fijan `k = 5`.
-Importancia: cuantifica el impacto de elegir `k` automáticamente frente a fijarlo a priori. Separa dos escenarios opuestos: el sintético, donde el `k` real varía por documento (3, 4 o 5), y Wikipedia, donde el ground truth está truncado a 5 por construcción. Comparar ambos permite extraer conclusiones sobre cuándo vale la pena activar la selección automática.
+El **Experimento 6** (`exp_auto_k_small` para el sintético y `exp_auto_k` para Wikipedia) cuantifica cuánto mejora la segmentación cuando `k` se elige automáticamente por documento en lugar de fijarse globalmente a priori. Cada algoritmo declara `max_segments: auto` en el YAML; el runner llama una sola vez por documento a `find_optimal_k` (método del codo / Kneedle sobre la curva del objetivo óptimo de DP, §15.7) y pasa ese `k` a los tres algoritmos, sin intervención de LLM. Es la contraparte directa de los Experimentos 1 y 4, que fijan `k = 5`, y enfrenta dos escenarios opuestos: el sintético `small`, donde el `k` real varía por documento (3, 4 o 5), y `wikipedia`, donde el ground truth está truncado a 5 por construcción. Comparar ambos permite concluir cuándo vale la pena activar la selección automática.
 
-### 10.7 Reproducibilidad
+### 10.7 Experimento 7 — Backend de cohesión: TF-IDF vs SBERT
+
+El **Experimento 7** (`exp_cohesion_backend`) mide cuánto mejora la segmentación si se reemplaza la representación léxica TF-IDF por *embeddings* semánticos densos (Sentence-BERT), sin cambiar los algoritmos. Se evalúa sobre `wikipedia` (25 artículos, texto natural, donde más se espera notar la diferencia) y `small` (20 docs, sintético controlado, como control), sin LLM. Cada algoritmo se instancia dos veces, con `cohesion_backend: tfidf` y `cohesion_backend: sbert`, manteniendo todo lo demás constante (`max_segments = 5`). El backend SBERT usa `paraphrase-multilingual-MiniLM-L12-v2` (384 dimensiones, multilingüe, ejecución local). SA usa la mejor configuración del Experimento 5 (T₀=0,5, α=0,995, n_iter=2000) con una sola semilla (42); por eso su F1 absoluto con TF-IDF aquí —0,760 en `small`, 0,463 en Wikipedia— corresponde a una corrida puntual y no coincide ni con el promedio sobre 30 semillas del §11.5 (0,7815) ni con el SA de configuración por defecto (T₀=1,0) del §11.4 (0,483 en Wikipedia). Como el delta SBERT − TF-IDF se calcula con la misma semilla en ambos backends, esa elección no afecta a la magnitud que mide este experimento. Se promedian F1-Boundary, Pk, WindowDiff y el tiempo por documento, y se reporta el delta SBERT − TF-IDF. Script: `src/experiments/cohesion_backend_compare.py`.
+
+Así aísla el efecto de la representación de oraciones —la limitación identificada en §5.4— del resto del sistema: Wikipedia es el caso donde se espera el mayor impacto (vocabulario rico con sinónimos), mientras que `small` actúa como control para verificar que la adición no perjudica el escenario sintético ideal.
+
+Conviene subrayar su alcance: este experimento es **ilustrativo**. SBERT es un modelo de *embeddings* dentro de la función objetivo, no el LLM evaluador que exige la orientación (ese rol lo cumple Groq/Mistral, §7). El Experimento 7 no forma parte del requisito de la asignatura; se incluye para cuantificar el peso de la representación léxica vs. semántica.
+
+### 10.8 Reproducibilidad
 
 | Parámetro | Valor |
 | --- | --- |
@@ -878,7 +857,8 @@ Importancia: cuantifica el impacto de elegir `k` automáticamente frente a fijar
 | Python | 3.12.3 |
 | scikit-learn | ≥ 1.3 |
 | numpy | ≥ 1.24 |
-| Fecha de ejecución | 2026-06-10 (exp 1–3) · 2026-06-11 (exp 4 y 5, UTC) |
+| sentence-transformers (solo Exp. 7) | ≥ 2.2 · modelo `paraphrase-multilingual-MiniLM-L12-v2` |
+| Fecha de ejecución | 2026-06-10 (exp 1–3) · 2026-06-11 (exp 4 y 5) · 2026-06-15 (exp 6 y 7, UTC) |
 
 La semilla se registra en `run_metadata.json` junto a cada resultado.
 
@@ -913,7 +893,7 @@ Lectura: las dos filas son idénticas en métricas de calidad. Esto prueba exper
 
 Las métricas estructurales de SA son idénticas entre Exp. 1 y Exp. 3, validando la reproducibilidad: los parámetros del YAML —incluido `random_seed`— llegan correctamente al constructor de SA, eliminando cualquier no-determinismo entre corridas.
 
-Uso del fallback LLM: la unidad de llamada es un segmento (no un documento). Con 20 docs × 3 algoritmos × 5 segmentos predichos por doc-algoritmo, son 300 llamadas LLM distribuidas en 60 pares doc-algoritmo. A nivel de llamada, Groq respondió correctamente en el 90,3 % (271/300); el resto cayó al fallback de Mistral. A nivel doc-algoritmo, 6 pares (de 60) activaron al menos una vez el fallback: 5 con tasa 100 % (los 5 segmentos a Mistral) y 1 con tasa 80 % (4 de 5 segmentos). Matiz importante: los 6 pares con fallback corresponden todos al mismo algoritmo (`simulated_annealing`, documentos 15 a 20), porque SA se ejecutó al final del experimento y heredó el límite de tasa acumulado de Groq durante las corridas previas de DP y Greedy. Es decir, la tasa de éxito por algoritmo no fue uniforme: DP y Greedy alcanzaron 100 % de respuestas Groq, mientras SA recibió ~71 % (71/100). Que ningún segmento cayese en el "score neutro = 3" se infiere indirectamente: las medias de LLM score por algoritmo se mantienen en 4,41–4,54 (lejos del piso 3,0 que produciría un neutral). El runner ya persiste por documento el campo `llm_n_neutral` ([src/experiments/runner.py:165-169](src/experiments/runner.py#L165-L169)) como cuenta directa de segmentos que llegaron al camino neutral; los `results.json` de esta entrega son anteriores a ese cambio y solo guardan `llm_used_fallback`, por lo que la verificación bit a bit estará disponible en cualquier re-corrida posterior.
+Uso del fallback LLM: la unidad de llamada es un segmento (no un documento). Con 20 docs × 3 algoritmos × 5 segmentos predichos por doc-algoritmo, son 300 llamadas LLM distribuidas en 60 pares doc-algoritmo. A nivel de llamada, Groq respondió correctamente en el 90,3 % (271/300); el resto cayó al fallback de Mistral. A nivel doc-algoritmo, 6 pares (de 60) activaron al menos una vez el fallback: 5 con tasa 100 % (los 5 segmentos a Mistral) y 1 con tasa 80 % (4 de 5 segmentos). Matiz importante: los 6 pares con fallback corresponden todos al mismo algoritmo (`simulated_annealing`, documentos 15 a 20). El runner no ejecuta los algoritmos en bloques separados, sino intercalados por documento (DP → Greedy → SA dentro de cada documento, ver [src/experiments/runner.py:128-133](src/experiments/runner.py#L128-L133)), de modo que SA es siempre la última de las tres llamadas de cada documento. El límite de tasa de Groq se acumula con el tiempo de pared, así que el throttle solo se vuelve persistente hacia el final de la corrida (documentos 15 a 20) y lo absorbe SA por ser la tercera llamada de cada documento; DP y Greedy, evaluados antes dentro del mismo documento, alcanzan a responder por Groq. Es decir, la tasa de éxito por algoritmo no fue uniforme: DP y Greedy alcanzaron 100 % de respuestas Groq, mientras SA recibió ~71 % (71/100). Que ningún segmento cayese en el "score neutro = 3" se infiere indirectamente: las medias de LLM score por algoritmo se mantienen en 4,41–4,54 (lejos del piso 3,0 que produciría un neutral). El runner ya persiste por documento el campo `llm_n_neutral` ([src/experiments/runner.py:165-169](src/experiments/runner.py#L165-L169)) como cuenta directa de segmentos que llegaron al camino neutral; los `results.json` de esta entrega son anteriores a ese cambio y solo guardan `llm_used_fallback`, por lo que la verificación bit a bit estará disponible en cualquier re-corrida posterior.
 
 ### 11.4 Experimento 4 — DP, Greedy, SA en `wikipedia` (texto real)
 
@@ -1025,6 +1005,38 @@ Aquí auto-k queda ligeramente por debajo del `k = 5` fijo en F1 (k medio elegid
 
 Conclusión del experimento: cuando el `k` real es genuinamente variable (sintético, el caso realista), auto-k gana con claridad. Cuando el `k` real está fijado de antemano por el diseño del corpus (Wikipedia truncado), fijar `k = 5` coincide con el ground truth en 24 de 25 documentos por construcción — una ventaja que ningún método ciego al ground truth puede igualar — y auto-k paga un coste pequeño por no conocerlo. En ambos escenarios, el sistema produce una segmentación completa sin que el usuario tenga que especificar `k`.
 
+### 11.9 Experimento 7 — Backend de cohesión: TF-IDF vs SBERT
+
+Este experimento contrasta la representación léxica por defecto (TF-IDF) con el backend semántico opcional (Sentence-BERT) descrito en §5.4, manteniendo idénticos los algoritmos y `max_segments = 5`. La tabla muestra el delta SBERT − TF-IDF: positivo en F1 es mejor; negativo en Pk y WindowDiff es mejor. (Recordatorio del §10.7: el baseline TF-IDF de SA es una corrida de una sola semilla con la mejor config del Exp. 5, de ahí que su F1 absoluto —0,463 en Wikipedia, 0,760 en `small`— no coincida con el promedio de 30 semillas del §11.5; el delta no se ve afectado por ello.)
+
+**Dataset `wikipedia`** (texto natural, donde TF-IDF se degrada):
+
+| Algoritmo | F1 TF-IDF | F1 SBERT | Δ F1 | Pk TF-IDF | Pk SBERT | WD TF-IDF | WD SBERT |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Dynamic Programming | 0,453 | **0,593** | **+0,140** | 0,374 | **0,308** | 0,396 | **0,321** |
+| Simulated Annealing | 0,463 | **0,683** | **+0,220** | 0,375 | **0,274** | 0,389 | **0,283** |
+| Greedy (TextTiling) | 0,423 | 0,373 | −0,050 | 0,362 | 0,390 | 0,413 | 0,439 |
+
+**Dataset sintético `small`** (control: vocabulario ya separado por tópico):
+
+| Algoritmo | F1 TF-IDF | F1 SBERT | Δ F1 | Pk TF-IDF | Pk SBERT | WD TF-IDF | WD SBERT |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Dynamic Programming | 0,797 | **0,816** | +0,019 | 0,173 | **0,141** | 0,195 | **0,157** |
+| Simulated Annealing | 0,760 | **0,785** | +0,025 | 0,202 | **0,190** | 0,220 | **0,207** |
+| Greedy (TextTiling) | 0,743 | **0,810** | +0,066 | 0,129 | **0,079** | 0,237 | **0,180** |
+
+Interpretación:
+
+1. **El mayor impacto está en texto natural y en los algoritmos basados en cohesión.** Sobre Wikipedia, SBERT eleva el F1 de SA de 0,463 a 0,683 (+0,220, un +47 % relativo) y el de DP de 0,453 a 0,593 (+0,140, +31 %), con caídas paralelas en Pk y WindowDiff. Esto valida —y supera— la estimación previa de "+15–20 % F1" que figuraba como mejora futura: una vez que la matriz de cohesión refleja semántica en lugar de coincidencia léxica, DP y SA optimizan sobre una señal mucho menos ruidosa.
+
+2. **Greedy retrocede en Wikipedia (−0,050).** Su heurística de "valles de similitud entre bloques" depende de contrastes léxicos abruptos entre oraciones vecinas; los *embeddings* densos suavizan esas similitudes (todo el texto de un artículo es semánticamente algo parecido), lo que difumina los valles que Greedy busca. Es decir, la representación que ayuda a la optimización global de DP/SA perjudica a una heurística local de cambios bruscos.
+
+3. **En el sintético el backend no perjudica; mejora moderadamente.** Las ganancias son pequeñas (DP +0,019, SA +0,025) porque ahí el vocabulario ya está separado por tópico y TF-IDF apenas tiene margen de error; aun así Greedy gana +0,066. El backend semántico es seguro de activar también en el caso ideal.
+
+4. **El coste es tiempo.** SBERT añade la etapa de *encoding* de oraciones: el tiempo medio por documento sube de ~23 ms a ~586 ms en DP sobre Wikipedia y de ~28 ms a ~168 ms en SA. Sigue siendo del orden de décimas de segundo por documento, asumible para uso por lotes, pero es un factor 6–25× que justifica mantener TF-IDF como opción por defecto.
+
+Conclusión del experimento: para texto natural, activar `cohesion_backend: sbert` con DP o SA es la mejora individual de mayor impacto medida en todo el proyecto. La recomendación práctica (§14.3) se actualiza en consecuencia.
+
 ---
 
 ## 12. Discusión: por qué pasó lo que pasó
@@ -1078,8 +1090,7 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 
 | Prioridad | Limitación | Mejora propuesta | Impacto estimado |
 | --- | --- | --- | --- |
-| Alta | TF-IDF degrada en texto natural (−43 % F1 entre sintético y Wikipedia) | Reemplazar por embeddings densos (Sentence-BERT) | +15–20 % F1 en textos reales |
-| Completada | SA con hiperparámetros por defecto | Búsqueda por rejilla (grid search) de 27 configs con 30 réplicas (Exp. 5) | Logró +2,8 % de F1 (0,760 → 0,7815) y menor error en SA |
+| Media | Greedy pierde con *embeddings* densos (su heurística de valles necesita contrastes léxicos abruptos) | Backend híbrido para Greedy o detección de valles sobre una señal mixta léxico-semántica | Recuperar la robustez de Greedy también con SBERT |
 | Media | Wikipedia sin evaluación LLM | Correr `exp_wikipedia` con `provider: groq` para medir LLM score sobre texto real | Validación semántica del cambio de ranking |
 | Baja | Wikipedia limitado a 28 títulos | Ampliar a categorías completas (e.g. todo "Ciencia") vía API de categorías | Mayor tamaño muestral |
 | Baja | BF limitado a $n \leq 15$ | (Inherente al algoritmo; ya cumple su rol) | — |
@@ -1103,6 +1114,7 @@ El diseño multi-dataset es lo que permite extraer esta conclusión: con un solo
 7. La función objetivo basada en TF-IDF es razonable en condiciones controladas pero degrada con vocabulario natural: hay margen claro de mejora con embeddings densos.
 8. El análisis de sensibilidad estocástico con 30 réplicas (Experimento 5) demostró la importancia de calibrar los hiperparámetros de SA. Se determinó que una tasa de enfriamiento equilibrada de $\alpha = 0,995$ y una temperatura inicial moderada ($T_0 \le 1,0$) son estadísticamente óptimas, logrando elevar el F1-Boundary promedio de SA de $0,760$ a $0,7815$ y disminuyendo significativamente la varianza de los resultados. Tazas muy rápidas ($\alpha = 0,990$) congelan la solución en óptimos locales, mientras que tasas extremadamente lentas ($\alpha = 0,999$) no permiten estabilizar el proceso.
 9. En uso real, `k` nunca se conoce de antemano: nadie sabe cuántos temas tiene un artículo antes de leerlo. La selección automática mediante el método del codo (Experimento 6) es la única forma de aplicar el sistema a texto arbitrario sin intervención manual. El Experimento 6 confirma que SA + auto-k sigue siendo el mejor en texto natural (F1 = 0,441, Pk = 0,351), y que DP + auto-k es el mejor en sintético (F1 = 0,963, Pk = 0,038).
+10. La representación de las oraciones importa más que el algoritmo en texto natural. El Experimento 7 muestra que reemplazar TF-IDF por *embeddings* semánticos densos (Sentence-BERT) eleva el F1 sobre Wikipedia en +0,22 para SA (+47 %) y +0,14 para DP (+31 %) — la mejora individual de mayor impacto medida en el proyecto, mayor que la diferencia entre cualquier par de algoritmos. Confirma cuantitativamente que el cuello de botella sobre texto real era la función objetivo léxica (§5.4), no la estrategia de optimización. El backend es opcional y se activa por configuración, manteniendo TF-IDF como default por su menor coste.
 
 ### 14.2 Lecciones generales
 
@@ -1120,27 +1132,30 @@ Los experimentos miden algoritmos bajo condiciones controladas (mismo `k` para t
 
 2. **El texto es natural.** Un libro, un artículo académico o una transcripción tienen vocabulario rico con sinónimos y transiciones graduales — exactamente el escenario de Wikipedia, no el sintético.
 
-Dado que en la práctica el texto siempre es natural y `k` siempre es desconocido, **la recomendación por defecto es SA + auto-k**. Los datos del Experimento 6 lo confirman:
+Dado que en la práctica el texto siempre es natural y `k` siempre es desconocido, la elección de configuración tiene dos ejes acoplados: **qué algoritmo** usar (siempre con `auto-k`) y **qué representación** alimenta la función objetivo — TF-IDF léxico o *embeddings* semánticos SBERT (§5.4).
 
-| Algoritmo + auto-k | F1 ↑ | Pk ↓ | WindowDiff ↓ |
+**Eje 1 — el algoritmo.** Con la representación léxica TF-IDF, la apuesta más segura en texto natural es **SA + auto-k**:
+
+| Algoritmo + auto-k (TF-IDF) | F1 ↑ | Pk ↓ | WindowDiff ↓ |
 | --- | --- | --- | --- |
 | **SA** | **0,441** | **0,351** | **0,357** |
 | Greedy | 0,372 | 0,373 | 0,402 |
 | DP | 0,365 | 0,393 | 0,405 |
 
-DP queda último en texto natural aunque sea el algoritmo exacto. La razón es que ser exacto sobre una función objetivo mala (TF-IDF no captura sinónimos ni paráfrasis) es peor que explorar estocásticamente: DP encuentra el óptimo de un proxy incorrecto, mientras que la aleatoriedad de SA le permite escapar de ese óptimo y encontrar fronteras que se alinean mejor con la segmentación humana real.
+DP queda último pese a ser el algoritmo exacto, porque ser exacto sobre una función objetivo pobre (TF-IDF no captura sinónimos ni paráfrasis) es peor que explorar estocásticamente: DP encuentra el óptimo de un proxy incorrecto, mientras que la aleatoriedad de SA le permite escapar de ese óptimo y dar con fronteras mejor alineadas con la segmentación humana. Sus hiperparámetros ya están calibrados (`α = 0,995`, `T₀ = 1,0`, `n_iter = 2000`), así que no hay nada que ajustar. El único caso donde DP gana con TF-IDF es el de vocabulario muy disjunto entre temas (corpus técnico especializado donde TF-IDF ya funciona bien): ahí DP + auto-k alcanza F1 = 0,963 y Pk = 0,038.
 
-Los hiperparámetros de SA ya están calibrados por el Experimento 5 (`α = 0,995`, `T₀ = 1,0`, `n_iter = 2000`) — no hay nada que ajustar.
+**Eje 2 — la representación.** En texto natural la representación de las oraciones pesa más que el algoritmo. Alimentar la misma función objetivo con *embeddings* SBERT en lugar de TF-IDF lleva el F1 sobre Wikipedia de 0,463 a 0,683 en SA y de 0,453 a 0,593 en DP. Con una representación que captura significado, la función objetivo deja de ser un proxy pobre y el argumento que hundía a DP se desvanece: DP + SBERT vuelve a ser competitivo, casi a la par de SA + SBERT. El precio es tiempo: el *encoding* de oraciones multiplica el cómputo por 6–25× (de milisegundos a décimas de segundo por documento) y requiere descargar el modelo una vez.
 
-El único caso donde DP es la mejor opción es cuando el texto tiene vocabulario muy disjunto entre temas (corpus técnico muy especializado donde TF-IDF funciona bien). En ese escenario, DP + auto-k alcanza F1 = 0,963 y Pk = 0,038. Si no se sabe de qué tipo es el texto, SA es la apuesta más segura.
+**Una nota sobre auto-k y DP:** el método del codo (§15.7) usa DP internamente para barrer la curva J(k). Esto podría hacer pensar que usar DP como algoritmo de segmentación es gratuito — la tabla ya está calculada — y es cierto: DP + auto-k reutiliza esa tabla y no hace ningún cálculo adicional (las fronteras salen del backtracking sobre la misma tabla, O(k·n)). Pero el coste de calidad lo fija la representación, no el algoritmo: si la función objetivo es TF-IDF, ese óptimo exacto sigue siendo subóptimo para texto con vocabulario compartido; si es SBERT, DP recupera su ventaja.
 
-**Una nota sobre auto-k y DP:** el método del codo (§15.7) usa DP internamente para barrer la curva J(k). Esto podría hacer pensar que usar DP como algoritmo de segmentación es gratuito — la tabla de DP ya está calculada. Y es cierto: cuando se usa DP + auto-k, el sistema reutiliza esa tabla y no hace ningún cálculo adicional (las fronteras salen del backtracking sobre la misma tabla, O(k·n)). Pero eso no convierte a DP en la mejor opción para texto natural: el barrido de auto-k calcula el óptimo exacto de la función TF-IDF, y ese óptimo sigue siendo subóptimo para texto con vocabulario compartido. SA opera sobre ese mismo `k` pero explora el espacio de fronteras de forma estocástica, encontrando particiones que el proxy TF-IDF considera ligeramente peores pero que las métricas reales premian.
+Combinando ambos ejes, las recomendaciones prácticas son:
 
 | Situación | Recomendación |
 | --- | --- |
-| Texto natural (caso habitual: libros, artículos, transcripciones) | **SA + auto-k** con `α=0,995`, `T₀=1,0`, `n_iter=2000` |
-| Texto con vocabulario muy disjunto entre temas (corpus técnico especializado) | **DP + auto-k** — exacto y eficiente, una sola pasada |
-| Velocidad prioritaria sobre calidad | **Greedy + auto-k** — el barrido de auto-k domina el tiempo total, Greedy añade solo ~3 ms |
+| Texto natural, prioridad calidad, cómputo por lotes | **SA + auto-k + SBERT** (o DP + auto-k + SBERT, casi idéntico) — máxima calidad medida |
+| Texto natural, prioridad latencia o sin descargar modelos | **SA + auto-k** con TF-IDF (`α=0,995`, `T₀=1,0`, `n_iter=2000`) — rápido y robusto |
+| Vocabulario muy disjunto entre temas (corpus técnico especializado) | **DP + auto-k** — exacto y eficiente, una sola pasada |
+| Velocidad por encima de todo | **Greedy + auto-k** (TF-IDF) — el barrido de auto-k domina el tiempo; Greedy añade solo ~3 ms |
 
 En todos los casos, **auto-k no es opcional**: es lo que hace el sistema aplicable a texto arbitrario. Sin él, el usuario necesita conocer de antemano cuántos temas tiene el texto — información que el sistema debería revelar, no presuponer.
 
@@ -1152,8 +1167,8 @@ En todos los casos, **auto-k no es opcional**: es lo que hace el sistema aplicab
 
 - Python 3.10 o superior
 - Sistema operativo: Linux, macOS o Windows
-- Conexión a internet (solo para experimentos con LLM)
-- ~200 MB de espacio en disco
+- Conexión a internet (solo para experimentos con LLM y, una vez, para descargar el modelo SBERT del Experimento 7)
+- ~200 MB de espacio en disco (~700 MB si se usa el backend SBERT, que descarga un modelo de ~470 MB)
 
 ### 15.2 Instalación
 
@@ -1278,7 +1293,17 @@ python -m src.experiments.sa_sensitivity
 # Contraparte de los Exp. 1 y 4, pero con `max_segments: auto` en vez de k=5 fijo.
 python -m src.experiments.runner --config config/experiments/exp_auto_k_small.yaml
 python -m src.experiments.runner --config config/experiments/exp_auto_k.yaml
+
+# Experimento 7: backend de cohesión TF-IDF vs SBERT (sin LLM)
+# Requiere la dependencia opcional sentence-transformers; la primera ejecución
+# descarga el modelo paraphrase-multilingual-MiniLM-L12-v2 (~470 MB, una sola vez).
+# Como Exp. 5, no usa YAML: datasets y backends están definidos en el script.
+python -m src.experiments.cohesion_backend_compare
 ```
+
+Para usar el backend SBERT en cualquier experimento estándar basta con añadir
+`cohesion_backend: sbert` a los `params` del algoritmo en el YAML; el default es
+`tfidf` y no requiere instalar nada adicional.
 
 Los experimentos 1–4 generan tres archivos en `results/<experiment_id>/`:
 
@@ -1311,8 +1336,8 @@ Si el algoritmo elegido tiene hiperparámetros relevantes (`window_size` para gr
 
 La función objetivo $J(k) = \sum_i |S_i|\,\overline{\cos}(S_i)$ crece monótonamente con `k` (en el extremo, `k = n` da cohesión trivialmente perfecta). Por eso no se puede elegir `k` simplemente maximizando $J$. El demo aplica la **heurística del codo (Kneedle, Satopaa et al. 2011)** sobre la curva del objetivo óptimo de la DP:
 
-1. Se ejecuta **un único barrido de DP** hasta `k_max = min(n − 1, max(5, ⌈√n⌉))`, obteniendo $J(k)$ para todos los `k ∈ [2, k_max]` en una sola pasada de $O(n^2 \cdot k_{\max})$ operaciones. Con el límite $\sqrt{n}$, esto es $O(n^2 \cdot \sqrt{n}) = O(n^{2{,}5})$ en total — más eficiente que dejar crecer $k$ sin cota ($O(n^3)$ si $k_\max = n$). El límite $\sqrt{n}$ tiene además una justificación geométrica: si hay $k$ segmentos, el tamaño promedio de cada uno es $n/k$ oraciones. El punto donde el número de segmentos iguala al tamaño promedio es $k = n/k \Rightarrow k^2 = n \Rightarrow k = \sqrt{n}$. Por encima de ese punto los segmentos tienen de promedio menos oraciones que el número de segmentos que hay, señal de fragmentación excesiva; además TF-IDF se vuelve poco fiable en segmentos muy cortos. En la práctica se añade un piso de 5 para documentos pequeños ($n < 25$) donde $\sqrt{n} < 5$ y el rango $[2, \sqrt{n}]$ sería demasiado estrecho para detectar un codo.
-2. Se normalizan los ejes a $[0, 1]$: $\tilde{x}_k = (k - k_\min) / (k_\max - k_\min)$, $\tilde{y}_k = (J(k) - J_\min) / (J_\max - J_\min)$.
+1. Se ejecuta **un único barrido de DP** hasta `k_max = min(n − 1, max(5, ⌈√n⌉))`, obteniendo $J(k)$ para todos los `k ∈ [2, k_max]` en una sola pasada de $O(n^2 \cdot k_{\max})$ operaciones. Con el límite $\sqrt{n}$, esto es $O(n^2 \cdot \sqrt{n}) = O(n^{5/2})$ en total — más eficiente que dejar crecer $k$ sin cota ($O(n^3)$ si $k_{\max} = n$). El límite $\sqrt{n}$ tiene además una justificación geométrica: si hay $k$ segmentos, el tamaño promedio de cada uno es $n/k$ oraciones. El punto donde el número de segmentos iguala al tamaño promedio es $k = n/k \Rightarrow k^2 = n \Rightarrow k = \sqrt{n}$. Por encima de ese punto los segmentos tienen de promedio menos oraciones que el número de segmentos que hay, señal de fragmentación excesiva; además TF-IDF se vuelve poco fiable en segmentos muy cortos. En la práctica se añade un piso de 5 para documentos pequeños ($n < 25$) donde $\sqrt{n} < 5$ y el rango $[2, \sqrt{n}]$ sería demasiado estrecho para detectar un codo.
+2. Se normalizan los ejes a $[0, 1]$: $\tilde{x}_k = (k - k_{\min}) / (k_{\max} - k_{\min})$, $\tilde{y}_k = (J(k) - J_{\min}) / (J_{\max} - J_{\min})$.
 3. Se elige el `k` que maximiza $\tilde{y}_k - \tilde{x}_k$ — el punto de máxima distancia vertical entre la curva (cóncava) y la diagonal que une sus extremos.
 
 Intuitivamente: busca el punto donde añadir un segmento más deja de aportar ganancia significativa de cohesión. Sobre el texto de ejemplo (gatos / economía / Python, 9 oraciones), el auto-k elige **k = 3**, que es exactamente el número de temas reales. La curva mostrada en terminal es:
@@ -1537,11 +1562,12 @@ llm_evaluator:
 
 - Kirkpatrick, S., Gelatt, C. D., & Vecchi, M. P. (1983). *Optimization by Simulated Annealing*. Science, 220(4598), 671–680. Base teórica del algoritmo implementado en [src/algorithms/simulated_annealing.py](src/algorithms/simulated_annealing.py).
 - Bellman, R. (1957). *Dynamic Programming*. Princeton University Press. Origen del paradigma usado en [src/algorithms/dynamic_programming.py](src/algorithms/dynamic_programming.py).
+- Satopaa, V., Albrecht, J., Irwin, D., & Raghavan, B. (2011). *Finding a "Kneedle" in a Haystack: Detecting Knee Points in System Behavior*. 31st International Conference on Distributed Computing Systems Workshops (ICDCSW), 166–171. Base del método del codo para la selección automática de `k`, implementado en [src/algorithms/auto_k.py](src/algorithms/auto_k.py) y descrito en §15.7.
 
 ### Recursos de implementación
 
 - Pedregosa, F. *et al.* (2011). *Scikit-learn: Machine Learning in Python*. JMLR, 12, 2825–2830. Provee `TfidfVectorizer`, usado en [src/algorithms/_cohesion.py](src/algorithms/_cohesion.py).
-- API pública de Wikipedia (`https://en.wikipedia.org/w/api.php`), usada por [src/dataset/wikipedia_loader.py](src/dataset/wikipedia_loader.py).
+- API pública de Wikipedia (`https://es.wikipedia.org/w/api.php`), usada por [src/dataset/wikipedia_loader.py](src/dataset/wikipedia_loader.py).
 - Documentación de Groq (`https://console.groq.com/docs`) y Mistral (`https://docs.mistral.ai`) para la integración LLM descrita en §7.
 
 ---

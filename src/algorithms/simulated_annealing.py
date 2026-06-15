@@ -29,11 +29,13 @@ class SASegmenter(BaseSegmenter):
         initial_temp: float = 1.0,
         cooling_rate: float = 0.995,
         random_seed: int | None = None,
+        cohesion_backend: str = "tfidf",
     ) -> None:
         self._n_iterations = n_iterations
         self._initial_temp = initial_temp
         self._cooling_rate = cooling_rate
         self._random_seed = random_seed
+        self._cohesion_backend = cohesion_backend
 
     @property
     def name(self) -> str:
@@ -63,7 +65,9 @@ class SASegmenter(BaseSegmenter):
                 runtime_seconds=time() - start,
             )
 
-        cohesion = build_cohesion_matrix(document.sentences)
+        cohesion = build_cohesion_matrix(
+            document.sentences, backend=self._cohesion_backend
+        )
         rng = random.Random(self._random_seed)
         boundaries = self._run_sa(cohesion, n, k, rng)
 
@@ -83,9 +87,7 @@ class SASegmenter(BaseSegmenter):
     def _run_sa(self, cohesion, n: int, k: int, rng: random.Random) -> list[int]:
         # Initialise with uniformly-spaced boundaries
         step = n // k
-        current = [0] + sorted(
-            {min(i * step, n - 1) for i in range(1, k)}
-        )
+        current = [0] + sorted({min(i * step, n - 1) for i in range(1, k)})
         # Ensure exactly k boundaries (pad from remaining positions if needed)
         all_positions = set(range(n))
         while len(current) < k:

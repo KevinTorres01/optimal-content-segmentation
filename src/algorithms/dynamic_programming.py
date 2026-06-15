@@ -19,6 +19,9 @@ class DPSegmenter(BaseSegmenter):
     Space complexity: O(n^2 + n * k)
     """
 
+    def __init__(self, cohesion_backend: str = "tfidf") -> None:
+        self._cohesion_backend = cohesion_backend
+
     @property
     def name(self) -> str:
         return "dynamic_programming"
@@ -47,7 +50,9 @@ class DPSegmenter(BaseSegmenter):
             )
 
         k = min(max_segments or 5, n)
-        cohesion = build_cohesion_matrix(document.sentences)
+        cohesion = build_cohesion_matrix(
+            document.sentences, backend=self._cohesion_backend
+        )
         boundaries = self._run_dp(cohesion, n, k)
 
         return SegmentationResult(

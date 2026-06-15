@@ -22,6 +22,9 @@ class BruteForceSegmenter(BaseSegmenter):
     Time complexity:  O(C(n-1, k-1) * n)
     """
 
+    def __init__(self, cohesion_backend: str = "tfidf") -> None:
+        self._cohesion_backend = cohesion_backend
+
     @property
     def name(self) -> str:
         return "brute_force"
@@ -59,7 +62,9 @@ class BruteForceSegmenter(BaseSegmenter):
             )
 
         k = min(max_segments or 5, n)
-        cohesion = build_cohesion_matrix(document.sentences)
+        cohesion = build_cohesion_matrix(
+            document.sentences, backend=self._cohesion_backend
+        )
         boundaries = self._exhaustive_search(cohesion, n, k)
 
         return SegmentationResult(
@@ -69,9 +74,7 @@ class BruteForceSegmenter(BaseSegmenter):
             runtime_seconds=time() - start,
         )
 
-    def _exhaustive_search(
-        self, cohesion, n: int, k: int
-    ) -> list[int]:
+    def _exhaustive_search(self, cohesion, n: int, k: int) -> list[int]:
         """Enumerate all C(n-1, k-1) partitions and return the best."""
         best_score = float("-inf")
         best_boundaries: list[int] = [0]
@@ -79,9 +82,7 @@ class BruteForceSegmenter(BaseSegmenter):
         for internal in combinations(range(1, n), k - 1):
             boundaries = [0] + list(internal)
             ends = list(internal) + [n]
-            score = sum(
-                cohesion[b][e - 1] for b, e in zip(boundaries, ends)
-            )
+            score = sum(cohesion[b][e - 1] for b, e in zip(boundaries, ends))
             if score > best_score:
                 best_score = score
                 best_boundaries = boundaries
